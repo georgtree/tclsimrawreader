@@ -13,16 +13,17 @@ typedef enum { ENC_KIND_UTF8, ENC_KIND_UTF16LE } EncKind;
 
 typedef enum { DATA_BINARY, DATA_VALUES } DataKind;
 
-#define RAW_HEADER_ERROR (-1)
-#define RAW_HEADER_EOF 0
-#define RAW_HEADER_OK 1
+typedef enum RawHeaderStatus {
+    RAW_HEADER_ERROR = -1, /* Malformed/incomplete header or read/decode error */
+    RAW_HEADER_EOF = 0,    /* Clean EOF before another header starts */
+    RAW_HEADER_OK = 1      /* Complete header parsed; channel is at data block */
+} RawHeaderStatus;
 
 typedef enum {
     RAW_FLAG_REAL = 1u << 0,
     RAW_FLAG_DOUBLE = 1u << 1,
     RAW_FLAG_COMPLEX = 1u << 2,
     RAW_FLAG_STEPPED = 1u << 3
-    /* add others if needed */
 } RawFlag;
 
 typedef enum RawValueStorage {
@@ -32,69 +33,112 @@ typedef enum RawValueStorage {
 } RawValueStorage;
 
 typedef struct RawVariable {
-    Tcl_Size index;
-    char *name;
-    char *type;
-    RawValueStorage storage;
-    Tcl_Size valueBytes;
-    Tcl_Size offsetBytes;
+    /*------------------------------------------------------------------------------------------------------------------
+     * Variable identity from the raw-file Variables section
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Size index;              /* Numeric variable index as written in the raw header */
+    char *name;                  /* Owned variable name, for example "time", "v(out)", or "v(m1#body diode)" */
+    char *type;                  /* Owned variable type token, for example "voltage", "current", or "frequency" */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Decoded storage/layout information
+     *-----------------------------------------------------------------------------------------------------------------*/
+    RawValueStorage storage;     /* Resolved value representation for this variable */
+    Tcl_Size valueBytes;         /* Number of bytes occupied by this variable in one binary point */
+    Tcl_Size offsetBytes;        /* Byte offset of this variable within one binary point */
 } RawVariable;
 
 typedef struct RawHeader {
-    char *title;
-    char *date;
-    char *plotname;
-    unsigned flagsMask;
-    Tcl_Size numFlags;
-    char **flags;
-    Tcl_Size numVariables;
-    Tcl_Size numPoints;
-    int haveNumVariables;
-    int haveNumPoints;
-    /*
-       Default storage inferred from Flags:.
-       Individual variables can override it.
-    */
-    RawValueStorage defaultStorage;
-    Tcl_Size defaultValueBytes;
-    /*
-       Total number of bytes per point.
-       Usually sum of variables[i].valueBytes.
-    */
-    Tcl_Size pointStrideBytes;
-    RawVariable *variables;
+    /*------------------------------------------------------------------------------------------------------------------
+     * Basic plot metadata from scalar header fields
+     *-----------------------------------------------------------------------------------------------------------------*/
+    char *title;                 /* Owned Title: field */
+    char *date;                  /* Owned Date: field */
+    char *plotname;              /* Owned Plotname: field */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Flags: field, both as parsed strings and as decoded bit mask
+     *-----------------------------------------------------------------------------------------------------------------*/
+    unsigned flagsMask;          /* Decoded RAW_FLAG_* bit mask */
+    Tcl_Size numFlags;           /* Number of parsed flag strings */
+    char **flags;                /* Owned array of owned flag strings */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Declared raw-data dimensions
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Size numVariables;       /* Number from No. Variables: */
+    Tcl_Size numPoints;          /* Number from No. Points: */
+    int haveNumVariables;        /* True after No. Variables: was parsed */
+    int haveNumPoints;           /* True after No. Points: was parsed */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Default storage inferred from Flags:
+     *-----------------------------------------------------------------------------------------------------------------*/
+    RawValueStorage defaultStorage; /* Default value representation for variables in this plot */
+    Tcl_Size defaultValueBytes;     /* Default byte size per variable value in binary data */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Per-point binary layout
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Size pointStrideBytes;   /* Total number of bytes per binary point */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Variables section
+     *-----------------------------------------------------------------------------------------------------------------*/
+    RawVariable *variables;      /* Owned array of parsed variables in physical data order */
 } RawHeader;
 
 typedef struct RawPlot {
-    RawHeader header;
-    DataKind dataKind;
-    /*
-     * Offset immediately after Binary: marker line.
-     */
-    Tcl_WideInt dataOffset;
-    /*
-     * Offset immediately after the data block.
-     */
-    Tcl_WideInt nextOffset;
-    /*
-     * Binary block size in bytes.
-     */
-    Tcl_Size dataBytes;
+    /*------------------------------------------------------------------------------------------------------------------
+     * Parsed header and data-block kind
+     *-----------------------------------------------------------------------------------------------------------------*/
+    RawHeader header;            /* Parsed metadata and variable layout for this plot */
+    DataKind dataKind;           /* DATA_BINARY for Binary:, DATA_VALUES for ASCII Values: */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Data-block file offsets
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_WideInt dataOffset;      /* Offset immediately after Binary:/Values: marker line */
+    Tcl_WideInt nextOffset;      /* Offset immediately after this plot's data block */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Data-block size
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Size dataBytes;          /* Binary byte count or scanned textual Values: block byte count */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * ASCII Values: random-access index
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_WideInt *pointOffsets;   /* For Values: only; pointOffsets[i] is the offset of ASCII point i */
+    Tcl_Size numPointOffsets;    /* Number of entries in pointOffsets */
 } RawPlot;
 
 typedef struct RawFile {
-    Tcl_Interp *interp;
-    Tcl_Command token;
-    Tcl_Channel chan;
-    EncKind encKind;
-    Tcl_Encoding enc;
-    RawPlot *plots;
-    Tcl_Size numPlots;
-    Tcl_Size plotCapacity;
+    /*------------------------------------------------------------------------------------------------------------------
+     * Tcl command ownership
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Interp *interp;          /* Owning Tcl interpreter */
+    Tcl_Command token;           /* Per-file Tcl command token */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Open channel and header/data text decoding
+     *-----------------------------------------------------------------------------------------------------------------*/
+    Tcl_Channel chan;            /* Open raw-file channel, kept for lazy vector/dict reads */
+    EncKind encKind;             /* Detected raw header/text encoding kind */
+    Tcl_Encoding enc;            /* Tcl encoding handle for decoded text, or NULL when not needed */
+
+    /*------------------------------------------------------------------------------------------------------------------
+     * Parsed plots
+     *-----------------------------------------------------------------------------------------------------------------*/
+    RawPlot *plots;              /* Owned dynamic array of parsed plots */
+    Tcl_Size numPlots;           /* Number of valid entries in plots */
+    Tcl_Size plotCapacity;       /* Allocated capacity of plots array */
 } RawFile;
 
+//*** Header parsing functions
 static void RawHeaderInit(RawHeader *h);
-static char *TclStrDupLen(const char *s, Tcl_Size len);
+static void RawHeaderFree(RawHeader *h);
+static char *StrDupLen(const char *s, Tcl_Size len);
 static const char *SkipSpace(const char *s);
 static Tcl_Size TrimmedLen(const char *s);
 static int SetStringField(char **fieldPtr, const char *value);
@@ -109,42 +153,57 @@ static int ParseSizeField(Tcl_Interp *interp, const char *s, Tcl_Size *outPtr);
 static int AppendFlag(Tcl_Interp *interp, RawHeader *h, const char *start, Tcl_Size len);
 static int ParseFlags(Tcl_Interp *interp, RawHeader *h, const char *value);
 static int NextToken(const char **pPtr, const char **startPtr, Tcl_Size *lenPtr);
+static int RawIsVariableTypeToken(const char *start, Tcl_Size len);
+static const char *SkipToken(const char *p);
 static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *v);
 static int ReadVariablesSection(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h);
+static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h);
 static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h);
 static int ComputeBinaryByteCount(Tcl_Interp *interp, const RawHeader *h, Tcl_Size *nbytesPtr);
-static int ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
+static RawHeaderStatus ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
                       DataKind *dataKindPtr);
-static void RawHeaderPrintStdout(const RawHeader *h);
-static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h);
-
-static void RawHeaderFree(RawHeader *h);
-static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
-static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
-static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
-                                 Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr);
-static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
-
-static void RawFileDeleteProc(void *clientData);
 static Tcl_Obj *RawHeaderToDictObj(const RawHeader *h);
-static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index);
-static const char *RawDataKindName(DataKind kind);
-static int RawPlotDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
+
+//*** Reading data block functions
+static void RawPlotInit(RawPlot *p);
+static void RawPlotFree(RawPlot *p);
+static void RawPlotMove(RawPlot *dst, RawPlot *src);
+static void RawHeaderMove(RawHeader *dst, RawHeader *src);
+static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot);
+static double ReadLEFloat32AsDouble(const unsigned char *p);
+static double ReadLEFloat64(const unsigned char *p);
+static int RawBinaryReadExactBytes(Tcl_Interp *interp, Tcl_Channel chan, unsigned char *buf, Tcl_Size nbytes);
+static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage,
+                                 const unsigned char *p);
+static int RawParseAsciiDoubleToken(Tcl_Interp *interp, const char *start, Tcl_Size len, double *valuePtr);
+static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const char *start,
+                               Tcl_Size len);
+static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
+                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs);
+static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawPlot *plot);
+static int RawPlotAsciiVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
+                                   Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr);
+static int RawPlotAsciiDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
+                                 Tcl_Obj **objPtr);
+static int RawPlotBinaryVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
+                                    Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr);
+static int RawPlotBinaryDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
                             Tcl_Obj **objPtr);
 static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
                               Tcl_Size count, Tcl_Obj **objPtr);
-static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr);
+static int RawPlotDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
+                            Tcl_Obj **objPtr);
+static const char *RawDataKindName(DataKind kind);
+static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index);
 
-static int RawAppendDecodedValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage,
-                                 const unsigned char *p);
+//*** Tcl command registering/processing function
+static void RawFileDeleteProc(void *clientData);
+static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
 static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
                          Tcl_Size *fromPtr, Tcl_Size *countPtr);
-static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot);
-
-static int ReadExact(Tcl_Interp *interp, Tcl_Channel chan, unsigned char *buf, Tcl_Size nbytes);
-static void RawHeaderMove(RawHeader *dst, RawHeader *src);
-static void RawPlotMove(RawPlot *dst, RawPlot *src);
-static void RawPlotFree(RawPlot *p);
-static void RawPlotInit(RawPlot *p);
-static double ReadLEFloat64(const unsigned char *p);
-static double ReadLEFloat32AsDouble(const unsigned char *p);
+static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
+                                 Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr);
+static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr);
+static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
+static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
+extern DLLEXPORT int Tclsimrawreader_Init(Tcl_Interp *interp);
