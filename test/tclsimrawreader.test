@@ -672,6 +672,52 @@ v(n4) {2.999999997e-9 2.9999998052318768e-9 2.9999995283682797e-9 2.999999052757
     unset r
 }
 
+### Single plot Noise binary
+test testNoiseBinarySinglePlot-1 {read vectors names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
+} -body {
+    return [$r names]
+} -result {frequency onoise_q1 onoise_spectrum} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseBinarySinglePlot-2 {read number of points names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
+} -body {
+    return [$r npoints]
+} -result 84 -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseBinarySinglePlot-3 {read range of values of selected vector, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
+} -body {
+    return [$r vector onoise_spectrum -from 0 -count 10]
+} -result {1.6642898251936113e-6 1.4869725383897637e-6 1.3293750136913733e-6 1.1894014521340213e-6\
+1.0651881400649877e-6 9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7\
+6.285439175321231e-7} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseBinarySinglePlot-4 {read range of values of all vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
+} -body {
+    return [$r dict -from 0 -count 10]
+} -result {frequency {0.5 0.6294627058970836 0.7924465962305568 0.99763115748444 1.2559432157547903 1.58113883008419\
+1.9905358527674868 2.5059361681363623 3.1547867224009676 3.9716411736214092} onoise_q1 {1.653154764033754e-6\
+1.4744990273071898e-6 1.3154079133985575e-6 1.1737699373996661e-6 1.0477050278298499e-6 9.355395079588915e-7\
+8.357837884339669e-7 7.471124653478936e-7 6.683465467816801e-7 5.984375555351806e-7} onoise_spectrum\
+{1.6642898251936113e-6 1.4869725383897637e-6 1.3293750136913733e-6 1.1894014521340213e-6 1.0651881400649877e-6\
+9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7 6.285439175321231e-7}} -cleanup {
+    $r close
+    unset r
+}
+
 ### Multiplot plot AC binary
 test testACBinaryMultiPlot-1 {read vectors names with default plot (first), multiplot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
@@ -843,7 +889,8 @@ test testACBinaryMultiPlot-10 {read vector from the certain plot in range, multi
     unset r
 }
 
-test testACBinaryMultiPlot-11 {read all vector values from the certain plot in range, multiplot binary raw file} -setup {
+test testACBinaryMultiPlot-11 {read all vector values from the certain plot in range, multiplot binary raw file}\
+        -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
 } -body {
     return [$r dict -plot 2 -from 5 -count 16]
@@ -1423,6 +1470,184 @@ test testACAsciiSinglePlot-8 {read and print plot data, single plot ascii raw fi
     return [$r plots]
 } -result {{index 0 kind values title {capacitance and current comparison between models d and bulk diode in vdmos}\
 plotname {AC Analysis} nvariables 13 npoints 51 dataoffset 481 databytes 30947}} -cleanup {
+    $r close
+    unset r
+}
+
+### Single plot TRAN ascii
+test testTranAsciiSinglePlot-1 {read vectors names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r names]
+} -result {time v(vdd2) v(vdd) v(n2) v(n1) v(n3) v(n4) v(n5) v(n6) v(n7) v(n8) v(n9) v(n10) v(n11) v(n12) v(n13) v(n14)\
+v(n15) v(n16) v(osc_out) i(vmeasure) i(vdd)} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-2 {read number of points names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r npoints]
+} -result 7497 -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-3 {read range of values of selected vector, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r vector v(osc_out) -from 0 -count 10]
+} -result {0.25 0.2568578553609556 0.263698608838201 0.2773391940370545 0.3044251115251594 0.3578002426001482\
+0.4614261205557274 0.6568004035197178 0.789408382078732 0.8930701458221398} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-4 {read range of values of all vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r dict -from 0 -count 10]
+} -result {time {0.0 5.000000000000001e-13 1e-12 2e-12 4.000000000000001e-12 8.000000000000001e-12 1.6e-11\
+3.200000000000001e-11 4.36363115246727e-11 5.32321551013049e-11} v(vdd2) {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0}\
+v(vdd) {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0} v(n2) {2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9\
+2.999999052757637e-9 2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9 2.999999262866711e-9\
+2.999998714180387e-9 2.99999867648032e-9} v(n1) {2.999999997 2.999999997000001 2.999999997000001 2.999999997000002\
+2.999999997000002 2.999999997000001 2.999999997 2.999999997 2.999999997 2.999999997000001} v(n3) {2.999999997\
+2.999999997000001 2.999999997000001 2.999999997000002 2.999999997000002 2.999999997000001 2.999999997 2.999999997\
+2.999999997 2.999999997000001} v(n4) {2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9 2.999999052757637e-9\
+2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9 2.999999262866711e-9 2.999998714180387e-9\
+2.99999867648032e-9} v(n5) {2.999999997 2.999999997000001 2.999999997000001 2.999999997000002 2.999999997000002\
+2.999999997000001 2.999999997 2.999999997 2.999999997 2.999999997000001} v(n6) {2.999999997e-9 2.999999805231877e-9\
+2.99999952836828e-9 2.999999052757637e-9 2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9\
+2.999999262866711e-9 2.999998714180387e-9 2.99999867648032e-9} v(n7) {2.999999997 2.999999997000001 2.999999997000001\
+2.999999997000002 2.999999997000002 2.999999997000001 2.999999997 2.999999997 2.999999997 2.999999997000001} v(n8)\
+{2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9 2.999999052757637e-9 2.999999023205648e-9 2.999999129186048e-9\
+2.99999917479065e-9 2.999999262866711e-9 2.999998714180387e-9 2.99999867648032e-9} v(n9) {2.999999997 2.999999997000001\
+2.999999997000001 2.999999997000002 2.999999997000002 2.999999997000001 2.999999997 2.999999997 2.999999997\
+2.999999997000001} v(n10) {2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9 2.999999052757637e-9\
+2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9 2.999999262866711e-9 2.999998714180387e-9\
+2.99999867648032e-9} v(n11) {2.999999997 2.999999997000001 2.999999997000001 2.999999997000002 2.999999997000002\
+2.999999997000001 2.999999997 2.999999997 2.999999997 2.999999997000001} v(n12) {2.999999997e-9 2.999999805231877e-9\
+2.99999952836828e-9 2.999999052757637e-9 2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9\
+2.999999262866711e-9 2.999998714180387e-9 2.99999867648032e-9} v(n13) {2.999999997 2.999999997000001 2.999999997000001\
+2.999999997000002 2.999999997000002 2.999999997000001 2.999999997 2.999999997 2.999999997 2.999999997000001} v(n14)\
+{2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9 2.999999052757637e-9 2.999999023205648e-9 2.999999129186048e-9\
+2.99999917479065e-9 2.999999262866711e-9 2.999998714180387e-9 2.99999867648032e-9} v(n15) {2.999999997\
+2.999999997000001 2.999999997000001 2.999999997000002 2.999999997000002 2.999999997000001 2.999999997 2.999999997\
+2.999999997 2.999999997000001} v(n16) {2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9 2.999999052757637e-9\
+2.999999023205648e-9 2.999999129186048e-9 2.99999917479065e-9 2.999999262866711e-9 2.999998714180387e-9\
+2.99999867648032e-9} v(osc_out) {0.25 0.2568578553609556 0.263698608838201 0.2773391940370545 0.3044251115251594\
+0.3578002426001482 0.4614261205557274 0.6568004035197178 0.789408382078732 0.8930701458221398} i(vmeasure)\
+{0.002750000048000009 0.001371571120447224 0.001368150743714498 0.001361330451116416 0.001347787492387478\
+0.001321099926877824 0.001269286987952133 0.001171599846568459 0.001105295857355582 0.001053464975534756} i(vdd)\
+{-0.002750000048000009 -0.001371571120447224 -0.001368150743714498 -0.001361330451116416 -0.001347787492387478\
+-0.001321099926877824 -0.001269286987952133 -0.001171599846568459 -0.001105295857355582 -0.001053464975534756}}\
+-cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-5 {read and print header data, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r header]
+} -match glob -result {title switch_oscillator date {Thu Nov 28 21:14:56  2024} plotname {Transient Analysis} nvariables\
+22 npoints 7497 pointstride 176 flags real variables {{index 0 name time type time storage real64 valuebytes 8\
+offsetbytes 0} {index 1 name v(vdd2) type voltage storage real64 valuebytes 8 offsetbytes 8} {index 2 name v(vdd) type\
+voltage storage real64 valuebytes 8 offsetbytes 16} {index 3 name v(n2) type voltage storage real64 valuebytes 8\
+offsetbytes 24} {index 4 name v(n1) type voltage storage real64 valuebytes 8 offsetbytes 32} {index 5 name v(n3) type\
+voltage storage real64 valuebytes 8 offsetbytes 40} {index 6 name v(n4) type voltage storage real64 valuebytes 8\
+offsetbytes 48} {index 7 name v(n5) type voltage storage real64 valuebytes 8 offsetbytes 56} {index 8 name v(n6) type\
+voltage storage real64 valuebytes 8 offsetbytes 64} {index 9 name v(n7) type voltage storage real64 valuebytes 8\
+offsetbytes 72} {index 10 name v(n8) type voltage storage real64 valuebytes 8 offsetbytes 80} {index 11 name v(n9) type\
+voltage storage real64 valuebytes 8 offsetbytes 88} {index 12 name v(n10) type voltage storage real64 valuebytes 8\
+offsetbytes 96} {index 13 name v(n11) type voltage storage real64 valuebytes 8 offsetbytes 104} {index 14 name v(n12)\
+type voltage storage real64 valuebytes 8 offsetbytes 112} {index 15 name v(n13) type voltage storage real64 valuebytes\
+8 offsetbytes 120} {index 16 name v(n14) type voltage storage real64 valuebytes 8 offsetbytes 128} {index 17 name\
+v(n15) type voltage storage real64 valuebytes 8 offsetbytes 136} {index 18 name v(n16) type voltage storage real64\
+valuebytes 8 offsetbytes 144} {index 19 name v(osc_out) type voltage storage real64 valuebytes 8 offsetbytes 152}\
+{index 20 name i(vmeasure) type current storage real64 valuebytes 8 offsetbytes 160} {index 21 name i(vdd) type current\
+storage real64 valuebytes 8 offsetbytes 168}}} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-6 {read and print plot data, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title switch_oscillator plotname {Transient Analysis} nvariables 22 npoints 7497\
+dataoffset 590 databytes 4002288}} -cleanup {
+    $r close
+    unset r
+}
+
+### Single plot Noise ascii
+test testNoiseAsciiSinglePlot-1 {read vectors names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r names]
+} -result {frequency onoise_q1 onoise_spectrum} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseAsciiSinglePlot-2 {read number of points names, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r npoints]
+} -result 84 -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseAsciiSinglePlot-3 {read range of values of selected vector, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r vector onoise_spectrum -from 0 -count 10]
+} -result {1.664289825193611e-6 1.486972538389764e-6 1.329375013691373e-6 1.189401452134021e-6 1.065188140064988e-6\
+9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7 6.285439175321231e-7} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseAsciiSinglePlot-4 {read range of values of all vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r dict -from 0 -count 10]
+} -result {frequency {0.5 0.6294627058970836 0.7924465962305568 0.99763115748444 1.25594321575479 1.58113883008419\
+1.990535852767487 2.505936168136362 3.154786722400968 3.971641173621409} onoise_q1 {1.653154764033754e-6\
+1.47449902730719e-6 1.315407913398558e-6 1.173769937399666e-6 1.04770502782985e-6 9.355395079588915e-7\
+8.357837884339669e-7 7.471124653478936e-7 6.683465467816801e-7 5.984375555351806e-7} onoise_spectrum\
+{1.664289825193611e-6 1.486972538389764e-6 1.329375013691373e-6 1.189401452134021e-6 1.065188140064988e-6\
+9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7 6.285439175321231e-7}} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseAsciiSinglePlot-5 {read and print header data, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r header]
+} -match glob -result {title {a simple bipolar circuit} date {Mon Jul  6 16:55:30  2026} plotname {Noise Spectral Density\
+Curves} nvariables 3 npoints 84 pointstride 24 flags real variables {{index 0 name frequency type frequency storage\
+real64 valuebytes 8 offsetbytes 0} {index 1 name onoise_q1 type voltage-density storage real64 valuebytes 8 offsetbytes\
+8} {index 2 name onoise_spectrum type voltage-density storage real64 valuebytes 8 offsetbytes 16}}} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiSinglePlot-6 {read and print plot data, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title {a simple bipolar circuit} plotname {Noise Spectral Density Curves} nvariables 3\
+npoints 84 dataoffset 323 databytes 6456}} -cleanup {
     $r close
     unset r
 }

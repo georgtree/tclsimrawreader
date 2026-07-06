@@ -728,9 +728,6 @@ static int NextToken(const char **pPtr, const char **startPtr, Tcl_Size *lenPtr)
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
-    static const char *types[] = {"time",       "frequency",   "voltage",     "current",     "power",
-                                  "resistance", "impedance",   "conductance", "capacitance", "charge",
-                                  "flux",       "temperature", "noise",       NULL};
     for (int i = 0; types[i] != NULL; i++) {
         size_t n = strlen(types[i]);
         if ((Tcl_Size)n == len && strncmp(start, types[i], n) == 0) {
@@ -1807,6 +1804,9 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
         p = line;
         while (NextToken(&p, &tokStart, &tokLen)) {
             RawVariable *var;
+            /*
+             * First token of a point is the point index.
+             */
             if (!sawPointIndex) {
                 sawPointIndex = 1;
                 continue;
@@ -1815,6 +1815,52 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
                 break;
             }
             var = &h->variables[valuesSeen];
+            /*
+             * Xyce writes complex ASCII values as "real, imag", which appears as two
+             * whitespace tokens. Treat "real," plus the following token as one value.
+             */
+            if (var->storage == RAW_VALUE_COMPLEX128) {
+                const char *comma = memchr(tokStart, ',', (size_t)tokLen);
+
+                if (comma != NULL && (Tcl_Size)(comma - tokStart) + 1 == tokLen) {
+                    const char *imagStart;
+                    Tcl_Size imagLen;
+                    Tcl_DString ds;
+                    const char *combined;
+                    Tcl_Size combinedLen;
+
+                    if (!NextToken(&p, &imagStart, &imagLen)) {
+                        Tcl_DStringFree(&lineDs);
+                        Tcl_SetObjResult(interp,
+                                         Tcl_NewStringObj("malformed split complex value in ASCII raw data", -1));
+                        return TCL_ERROR;
+                    }
+                    Tcl_DStringInit(&ds);
+                    Tcl_DStringAppend(&ds, tokStart, tokLen);
+                    Tcl_DStringAppend(&ds, imagStart, imagLen);
+                    combined = Tcl_DStringValue(&ds);
+                    combinedLen = (Tcl_Size)Tcl_DStringLength(&ds);
+                    if (selectedListObj && valuesSeen == selectedVarIndex) {
+                        if (RawAppendAsciiValue(interp, selectedListObj, var->storage, combined, combinedLen) !=
+                            TCL_OK) {
+                            Tcl_DStringFree(&ds);
+                            Tcl_DStringFree(&lineDs);
+                            return TCL_ERROR;
+                        }
+                    }
+                    if (vecObjs) {
+                        if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], var->storage, combined, combinedLen) !=
+                            TCL_OK) {
+                            Tcl_DStringFree(&ds);
+                            Tcl_DStringFree(&lineDs);
+                            return TCL_ERROR;
+                        }
+                    }
+                    Tcl_DStringFree(&ds);
+                    valuesSeen++;
+                    continue;
+                }
+            }
             if (selectedListObj && valuesSeen == selectedVarIndex) {
                 if (RawAppendAsciiValue(interp, selectedListObj, var->storage, tokStart, tokLen) != TCL_OK) {
                     Tcl_DStringFree(&lineDs);
