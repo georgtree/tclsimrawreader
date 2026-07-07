@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>::tclsimrawreader &#8212; tclsimrawreader  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/classic.css?v=2bf1fcf8" />
+    
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="tclsimrawreader - read SPICE .raw file with Tcl" href="tclsimrawreader.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw file with Tcl"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">::tclsimrawreader</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="tclsimrawreader">
+<span id="r-tclsimrawreader"></span><span id="r-3a3atclsimrawreader"></span><h1>::tclsimrawreader<a class="headerlink" href="#tclsimrawreader" title="Link to this heading">¶</a></h1>
+<section id="commands">
+<span id="r-tclsimrawreader-commands"></span><span id="r-3a3atclsimrawreaderqzcommands"></span><h2>Commands<a class="headerlink" href="#commands" title="Link to this heading">¶</a></h2>
+<section id="openraw">
+<span id="r-3a3atclsimrawreader3a3aopenraw"></span><span id="index-1"></span><span id="index-0"></span><h3><code class="docutils literal notranslate"><span class="pre">openraw</span></code><a class="headerlink" href="#openraw" title="Link to this heading">¶</a></h3>
+<p>Open channel to provided .raw file, creates subcommand, parses header(s) information from the file.
+Every <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::openraw</span></code> returns a command (e.g. <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::s1</span></code>). The following
+subcommands operate on that file instance.</p>
+<pre class="literal-block"><strong>openraw</strong> <em>filepath</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">filepath</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Path to SPICE .raw file.</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>rawfile<span class="w"> </span><span class="k">[</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="o">/</span>path<span class="o">/</span>to<span class="o">/</span>ac.raw<span class="k">]</span>
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>command name to work with the file, references as <code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code> later</p>
+</section>
+<section id="rawfile">
+<span id="r-3a3atclsimrawreader3a3arawfile"></span><span id="index-3"></span><span id="index-2"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code><a class="headerlink" href="#rawfile" title="Link to this heading">¶</a></h3>
+<p>A
+command
+ensemble.</p>
+<pre class="literal-block"><strong>RAWFILE</strong> <em>subcommand ...</em></pre>
+<p class="rubric">Description</p>
+<p>The ensemble supports the following subcommands:</p>
+<dl class="simple">
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20close"><span class="std std-ref">close</span></a></dt><dd><p>Closes channel to provided .raw file and deletes subcommand.</p>
+</dd>
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20header"><span class="std std-ref">header</span></a></dt><dd><p>Returns dictionary containing metadata from the header for the selected plot. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code> option, returns header from the first plot. dictionary.</p>
+</dd>
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20names"><span class="std std-ref">names</span></a></dt><dd><p>Returns list of vectors’ names defined in the header. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code> option, returns names from the first plot. list.</p>
+</dd>
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20plots"><span class="std std-ref">plots</span></a></dt><dd><p>Returns list of dictionaries containing information about the plots in the .raw file. list of dictionaries.</p>
+</dd>
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20vector"><span class="std std-ref">vector</span></a></dt><dd><p>Returns the values of specified vector (variable) for selected plot, in certain range if specified. If plot index is not provided, return values from the first plot. list of values.</p>
+</dd>
+<dt><a class="reference internal" href="#r-3a3atclsimrawreader3a3arawfile20vectors"><span class="std std-ref">vectors</span></a></dt><dd><p>Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified. If plot index is not provided, return values from the first plot. list of values.</p>
+</dd>
+</dl>
+<p>Refer to the documentation of each subcommand for details.</p>
+</section>
+<section id="rawfile-close">
+<span id="r-3a3atclsimrawreader3a3arawfile20close"></span><span id="index-5"></span><span id="index-4"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code><a class="headerlink" href="#rawfile-close" title="Link to this heading">¶</a></h3>
+<p>Closes channel to provided .raw file and deletes subcommand.</p>
+<pre class="literal-block"><strong>RAWFILE close</strong></pre>
+<p class="rubric">Description</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$rawfile</span><span class="w"> </span><span class="nb">close</span>
+</pre></div>
+</div>
+</section>
+<section id="rawfile-header">
+<span id="r-3a3atclsimrawreader3a3arawfile20header"></span><span id="index-7"></span><span id="index-6"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">header</span></code><a class="headerlink" href="#rawfile-header" title="Link to this heading">¶</a></h3>
+<p>Returns dictionary containing metadata from the header for the selected plot. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code>
+option, returns header from the first plot.
+dictionary</p>
+<pre class="literal-block"><strong>RAWFILE header</strong> <em>?-plot index?</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-plot</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Index of the plot, optional.</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>Result dictionary containing next keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">title</span></code> - string from <code class="docutils literal notranslate"><span class="pre">Title:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">date</span></code> - string from <code class="docutils literal notranslate"><span class="pre">Date:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plotname</span></code> - string from <code class="docutils literal notranslate"><span class="pre">Plotname:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nvariables</span></code> - string from <code class="docutils literal notranslate"><span class="pre">No.</span> <span class="pre">Variables:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">npoints</span></code> - string from <code class="docutils literal notranslate"><span class="pre">No.</span> <span class="pre">Points:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pointstride</span></code> - number of bytes occupied by a single point</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">flags</span></code> - list of flags from <code class="docutils literal notranslate"><span class="pre">Flags:</span></code> header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">variables</span></code> - list of dictionaries containing information from <code class="docutils literal notranslate"><span class="pre">Variables:</span></code> header block and derived data</p></li>
+</ul>
+<p>Each <code class="docutils literal notranslate"><span class="pre">variable</span></code> key value contains dictionary with keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">index</span></code> - variable index</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">name</span></code> - name of the variable</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">type</span></code> - type of variable</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">storage</span></code> - string characterising the storage of the value for variable, real32 = 4 bytes, real64 = 8 bytes, complex128 = 16 bytes</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">valuebytes</span></code> - number of bytes per value</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">offsetbytes</span></code> - number of bytes from the start of point memory block to the start of variable value</p></li>
+</ul>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$rawfile</span><span class="w"> </span><span class="nv">header</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">header</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">1</span>
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>Returns dictionary containing metadata from the header for the selected plot. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code>
+option, returns header from the first plot.
+dictionary</p>
+</section>
+<section id="rawfile-names">
+<span id="r-3a3atclsimrawreader3a3arawfile20names"></span><span id="index-9"></span><span id="index-8"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">names</span></code><a class="headerlink" href="#rawfile-names" title="Link to this heading">¶</a></h3>
+<p>Returns list of vectors’ names defined in the header. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code> option, returns names
+from the first plot.
+list</p>
+<pre class="literal-block"><strong>RAWFILE names</strong> <em>?-plot index?</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-plot</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Index of the plot, optional.</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$rawfile</span><span class="w"> </span><span class="nv">names</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">names</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">1</span>
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>Returns list of vectors’ names defined in the header. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code> option, returns names
+from the first plot.
+list</p>
+</section>
+<section id="rawfile-plots">
+<span id="r-3a3atclsimrawreader3a3arawfile20plots"></span><span id="index-11"></span><span id="index-10"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">plots</span></code><a class="headerlink" href="#rawfile-plots" title="Link to this heading">¶</a></h3>
+<p>Returns list of dictionaries containing information about the plots in the .raw file.
+list of dictionaries</p>
+<pre class="literal-block"><strong>RAWFILE plots</strong></pre>
+<p class="rubric">Description</p>
+<p>Each dictionary contains next keys:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">index</span></code> - index of the plot, starting with 0</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">kind</span></code> - format of the data, either binary or ASCII</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">title</span></code> - string from <code class="docutils literal notranslate"><span class="pre">Title:</span></code> plot’s header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">plotname</span></code> - string from <code class="docutils literal notranslate"><span class="pre">Plotname:</span></code> plot’s header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">nvariables</span></code> - string from <code class="docutils literal notranslate"><span class="pre">No.</span> <span class="pre">Variables:</span></code> plot’s header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">npoints</span></code> - string from <code class="docutils literal notranslate"><span class="pre">No.</span> <span class="pre">Points:</span></code> plot’s header field</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">dataoffset</span></code> - number of bytes immediately after <code class="docutils literal notranslate"><span class="pre">Binary:</span></code>/<code class="docutils literal notranslate"><span class="pre">Values:</span></code> marker line for plot</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">databytes</span></code> - number of bytes occupied by a data block of the plot</p></li>
+</ul>
+<p class="rubric">Return value</p>
+<p>Returns list of dictionaries containing information about the plots in the .raw file.
+list of dictionaries</p>
+</section>
+<section id="rawfile-vector">
+<span id="r-3a3atclsimrawreader3a3arawfile20vector"></span><span id="index-13"></span><span id="index-12"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vector</span></code><a class="headerlink" href="#rawfile-vector" title="Link to this heading">¶</a></h3>
+<p>Returns the values of specified vector (variable) for selected plot, in certain range if specified. If plot
+index is not provided, return values from the first plot.
+list of values</p>
+<pre class="literal-block"><strong>RAWFILE vector</strong> <em>name ?-plot index? ?-from index? ?-count index?</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-count</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of values from the number provided by <code class="docutils literal notranslate"><span class="pre">-from</span></code>, or from the start otherwise, optional, integer.</p>
+</dd>
+<dt class="field-even"><code class="docutils literal notranslate"><span class="pre">-from</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-even"><p>Number of the values from the start of the vector, optional, integer.</p>
+</dd>
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-plot</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Index of the plot, optional.</p>
+</dd>
+<dt class="field-even"><code class="docutils literal notranslate"><span class="pre">name</span></code><span class="colon">:</span></dt>
+<dd class="field-even"><p>Name of the vector (variable)</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span>ID<span class="k">(</span><span class="nv">M1</span><span class="k">)</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span>ID<span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span><span class="o">-</span>from<span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="o">-</span>count<span class="w"> </span><span class="mi">16</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>ID<span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span><span class="o">-</span>from<span class="w"> </span><span class="mi">5</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>ID<span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span><span class="o">-</span>count<span class="w"> </span><span class="mi">16</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>ID<span class="k">(</span><span class="nv">M1</span><span class="k">)</span>
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>Returns the values of specified vector (variable) for selected plot, in certain range if specified. If plot
+index is not provided, return values from the first plot.
+list of values</p>
+</section>
+<section id="rawfile-vectors">
+<span id="r-3a3atclsimrawreader3a3arawfile20vectors"></span><span id="index-15"></span><span id="index-14"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vectors</span></code><a class="headerlink" href="#rawfile-vectors" title="Link to this heading">¶</a></h3>
+<p>Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+if specified. If plot index is not provided, return values from the first plot.
+list of values</p>
+<pre class="literal-block"><strong>RAWFILE vectors</strong> <em>?-plot index? -all|namesList ?-from index? ?-count index?</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-all|namesList</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>List of vectors’ (variables’) names, or <code class="docutils literal notranslate"><span class="pre">-all</span></code> to read all availible vectors.</p>
+</dd>
+<dt class="field-even"><code class="docutils literal notranslate"><span class="pre">-count</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-even"><p>Number of values from the number provided by <code class="docutils literal notranslate"><span class="pre">-from</span></code>, or from the start otherwise, optional, integer.</p>
+</dd>
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-from</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Number of the values from the start of the vector, optional, integer.</p>
+</dd>
+<dt class="field-even"><code class="docutils literal notranslate"><span class="pre">-plot</span> <span class="pre">index</span></code><span class="colon">:</span></dt>
+<dd class="field-even"><p>Index of the plot, optional.</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">{</span><span class="nv">ID</span><span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span>V<span class="k">(</span><span class="nv">VD</span><span class="k">)}</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="k">{</span><span class="nv">ID</span><span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span>V<span class="k">(</span><span class="nv">VD</span><span class="k">)}</span><span class="w"> </span><span class="o">-</span>from<span class="w"> </span><span class="mi">5</span><span class="w"> </span><span class="o">-</span>count<span class="w"> </span><span class="mi">16</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="k">{</span><span class="nv">ID</span><span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span>V<span class="k">(</span><span class="nv">VD</span><span class="k">)}</span><span class="w"> </span><span class="o">-</span>from<span class="w"> </span><span class="mi">5</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="k">{</span><span class="nv">ID</span><span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span>V<span class="k">(</span><span class="nv">VD</span><span class="k">)}</span><span class="w"> </span><span class="o">-</span>count<span class="w"> </span><span class="mi">16</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="k">{</span><span class="nv">ID</span><span class="k">(</span><span class="nv">M1</span><span class="k">)</span><span class="w"> </span>V<span class="k">(</span><span class="nv">VD</span><span class="k">)}</span>
+<span class="nv">$rawfile</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">-</span>all
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+if specified. If plot index is not provided, return values from the first plot.
+list of values</p>
+<hr class="docutils" />
+<p class="centered">
+<strong>Copyright (c) George Yashin</strong></p></section>
+</section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">::tclsimrawreader</a><ul>
+<li><a class="reference internal" href="#commands">Commands</a><ul>
+<li><a class="reference internal" href="#openraw"><code class="docutils literal notranslate"><span class="pre">openraw</span></code></a></li>
+<li><a class="reference internal" href="#rawfile"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-close"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-header"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">header</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-names"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">names</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-plots"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">plots</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-vector"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vector</span></code></a></li>
+<li><a class="reference internal" href="#rawfile-vectors"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vectors</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="tclsimrawreader.html"
+                          title="previous chapter">tclsimrawreader - read SPICE .raw file with Tcl</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/tclsimrawreader-tclsimrawreader.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw file with Tcl"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">::tclsimrawreader</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+    &#169; Copyright George Yashin.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
+    </div>
+  </body>
+</html>

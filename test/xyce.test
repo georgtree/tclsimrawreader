@@ -52,7 +52,7 @@ test testDCBinarySinglePlot-5 {read range of values of all vectors, single plot 
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {sweep {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16 0.18} V(2) {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16\
 0.18} V(1) {1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2} I(VDS) {7.311077174295937e-7 -0.0002210527878461174\
 -0.00043322476111155075 -0.000635961895295011 -0.0008294405233028457 -0.0010138336465503521 -0.001189311200846316\
@@ -64,7 +64,7 @@ test testDCBinarySinglePlot-5 {read range of values of all vectors, single plot 
 test testDCBinarySinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {sweep {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16 0.18 0.2 0.22 0.24 0.26 0.28 0.3 0.32 0.34 0.36 0.38 0.4\
 0.42 0.44 0.46 0.48 0.5 0.52 0.54 0.56 0.58 0.6 0.62 0.64 0.66 0.68 0.7000000000000001 0.72 0.74 0.76 0.78 0.8\
 0.8200000000000001 0.84 0.86 0.88 0.9 0.92 0.9400000000000001 0.96 0.98 1.0 1.02 1.04 1.06 1.08 1.1 1.12\
@@ -218,7 +218,7 @@ test testACBinarySinglePlot-5 {read range of values of all vectors, single plot 
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder ac.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {FREQUENCY {{1.0 0.0} {1.2589254117941673 0.0} {1.5848931924611136 0.0} {1.99526231496888 0.0}\
 {2.5118864315095806 0.0} {3.1622776601683804 0.0} {3.981071705534974 0.0} {5.011872336272725 0.0} {6.309573444801935\
 0.0} {7.943282347242819 0.0}} V(16) {{111.61501946686957 -9.998923060041676e-6} {111.6150194668692\
@@ -237,7 +237,7 @@ test testACBinarySinglePlot-5 {read range of values of all vectors, single plot 
 test testACBinarySinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder ac.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {FREQUENCY {{1.0 0.0} {1.2589254117941673 0.0} {1.5848931924611136 0.0} {1.99526231496888 0.0}\
 {2.5118864315095806 0.0} {3.1622776601683804 0.0} {3.981071705534974 0.0} {5.011872336272725 0.0} {6.309573444801935\
 0.0} {7.943282347242819 0.0} {10.000000000000005 0.0} {12.58925411794168 0.0} {15.848931924611145 0.0}\
@@ -400,7 +400,7 @@ test testTranBinarySinglePlot-4 {read range of values of all vectors, single plo
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder tran.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {TIME {0.0 1e-10 3e-10 7.000000000000001e-10 1.5000000000000002e-9 3.1000000000000005e-9 6.3e-9\
 1.2700000000000001e-8 2.5500000000000003e-8 5.11e-8} I(VMON) {0.0021920775166926927 0.0021920777984055203\
 0.002192077798396369 0.002192077798371961 0.00219207779844518 0.002192077798371961 0.00219207779844518\
@@ -450,7 +450,7 @@ test testNoiseBinarySinglePlot-4 {read range of values of all vectors, single pl
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder noise.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {{100.0 0.0} {158.48931924611136 0.0} {251.18864315095806 0.0} {398.1071705534973 0.0}\
 {630.9573444801935 0.0} {1000.0000000000003 0.0} {1584.8931924611143 0.0} {2511.886431509581 0.0} {3981.0717055349746\
 0.0} {6309.573444801937 0.0}} V(1) {{1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0}\
@@ -539,7 +539,7 @@ test testDCBinaryMultiPlot-5 {read range of values of all vectors with default p
                                        file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc_multiplot.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {sweep {0.0 0.01 0.02 0.03 0.04 0.05 0.06 0.07 0.08 0.09} V(DRAIN) {0.0 0.01 0.02 0.03 0.04 0.05 0.06 0.07\
 0.08 0.09} V(GATE) {0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2} ID(M1) {-4.345867064560226e-18 9.47505962578532e-12\
 1.749989042565403e-11 2.4039797930086593e-11 2.9205804441545524e-11 3.3258118481427346e-11 3.650552082845593e-11\
@@ -641,7 +641,7 @@ test testDCBinaryMultiPlot-11 {read all vector values from the certain plot in r
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc_multiplot.raw]]
 } -body {
-    return [$r dict -plot 2 -from 5 -count 16]
+    return [$r vectors -plot 2 -all -from 5 -count 16]
 } -result {sweep {0.05 0.06 0.07 0.08 0.09 0.1 0.11 0.12 0.13 0.14 0.15 0.16 0.17 0.18 0.19 0.2} V(DRAIN) {0.05 0.06\
 0.07 0.08 0.09 0.1 0.11 0.12 0.13 0.14 0.15 0.16 0.17 0.18 0.19 0.2} V(GATE) {0.4 0.4 0.4 0.4 0.4 0.4 0.4 0.4 0.4 0.4\
 0.4 0.4 0.4 0.4 0.4 0.4} ID(M1) {4.809257159177349e-9 5.255178237018043e-9 5.6242094315095414e-9 5.947881076551198e-9\
@@ -715,7 +715,7 @@ test testDCAsciiSinglePlot-5 {read range of values of all vectors, single plot b
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {sweep {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16 0.18} V(2) {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16\
 0.18} V(1) {1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2 1.2} I(VDS) {7.31107717e-7 -0.000221052788 -0.000433224761\
 -0.000635961895 -0.000829440523 -0.00101383365 -0.0011893112 -0.00135604041 -0.00151418618 -0.00166391153}} -cleanup {
@@ -726,7 +726,7 @@ test testDCAsciiSinglePlot-5 {read range of values of all vectors, single plot b
 test testDCAsciiSinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder dc_ascii.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {sweep {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14 0.16 0.18 0.2 0.22 0.24 0.26 0.28 0.3 0.32 0.34 0.36 0.38 0.4\
 0.42 0.44 0.46 0.48 0.5 0.52 0.54 0.56 0.58 0.6 0.62 0.64 0.66 0.68 0.7 0.72 0.74 0.76 0.78 0.8 0.82 0.84 0.86 0.88 0.9\
 0.92 0.94 0.96 0.98 1.0 1.02 1.04 1.06 1.08 1.1 1.12 1.14 1.16 1.18 1.2} V(2) {0.0 0.02 0.04 0.06 0.08 0.1 0.12 0.14\
@@ -839,7 +839,7 @@ test testACAsciiSinglePlot-5 {read range of values of all vectors, single plot a
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder ac_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {FREQUENCY {{1.0 0.0} {1.25892541 0.0} {1.58489319 0.0} {1.99526231 0.0} {2.51188643 0.0} {3.16227766 0.0}\
 {3.98107171 0.0} {5.01187234 0.0} {6.30957344 0.0} {7.94328235 0.0}} V(16) {{111.615019 -9.99892306e-6} {111.615019\
 -1.25878983e-5} {111.615019 -1.58472251e-5} {111.615019 -1.99504744e-5} {111.615019 -2.51161592e-5} {111.615019\
@@ -854,7 +854,7 @@ test testACAsciiSinglePlot-5 {read range of values of all vectors, single plot a
 test testACAsciiSinglePlot-6 {read values of all vectors, single plot ascii raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder ac_ascii.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {FREQUENCY {{1.0 0.0} {1.25892541 0.0} {1.58489319 0.0} {1.99526231 0.0} {2.51188643 0.0} {3.16227766 0.0}\
 {3.98107171 0.0} {5.01187234 0.0} {6.30957344 0.0} {7.94328235 0.0} {10.0 0.0} {12.5892541 0.0} {15.8489319 0.0}\
 {19.9526231 0.0} {25.1188643 0.0} {31.6227766 0.0} {39.8107171 0.0} {50.1187234 0.0} {63.0957344 0.0} {79.4328235 0.0}\
@@ -979,7 +979,7 @@ test testTranAsciiSinglePlot-4 {read range of values of all vectors, single plot
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files $rawFolder tran_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {TIME {0.0 1e-10 3e-10 7e-10 1.5e-9 3.1e-9 6.3e-9 1.27e-8 2.55e-8 5.11e-8} I(VMON) {0.00219207752\
 0.0021920778 0.0021920778 0.0021920778 0.0021920778 0.0021920778 0.0021920778 0.0021920778 0.0021920778 0.0021920778}\
 V(3) {0.615844967 0.615844403 0.615844403 0.615844403 0.615844403 0.615844403 0.615844403 0.615844403 0.615844403\

@@ -1419,6 +1419,49 @@ static void RawHeaderMove(RawHeader *dst, RawHeader *src) {
     RawHeaderInit(src);
 }
 
+//***  RawFreeVectorObjects function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawFreeVectorObjects --
+ *
+ *      Releases an array of Tcl list objects created for raw vector output and then frees the array itself.
+ *
+ * Parameters:
+ *      Tcl_Obj **vecObjs - Array of Tcl object pointers to release. May be NULL.
+ *      Tcl_Size numVars  - Number of entries in vecObjs.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Releases each non-NULL object in vecObjs.
+ *      Frees the vecObjs array with Tcl_Free().
+ *
+ * Notes:
+ *      This helper is intended for error cleanup paths before the vector objects have been returned to Tcl or inserted
+ *      into another result object.
+ *
+ *      Each object is temporarily reference-counted with Tcl_IncrRefCount() and immediately released with
+ *      Tcl_DecrRefCount(). This safely disposes of newly created Tcl objects whose reference count is still zero.
+ *
+ *      The function does not clear the caller's vecObjs pointer.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawFreeVectorObjects(Tcl_Obj **vecObjs, Tcl_Size numVars) {
+    if (vecObjs == NULL) {
+        return;
+    }
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        if (vecObjs[i]) {
+            Tcl_IncrRefCount(vecObjs[i]);
+            Tcl_DecrRefCount(vecObjs[i]);
+        }
+    }
+    Tcl_Free((char *)vecObjs);
+}
+
 //***  RawFileAppendPlotMove function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -1529,6 +1572,85 @@ static double ReadLEFloat64(const unsigned char *p) {
     double d;
     memcpy(&d, &u, sizeof d);
     return d;
+}
+
+//***  RawPlotResolveVariableList function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotResolveVariableList --
+ *
+ *      Resolves a Tcl list of raw vector names to an owned array of variable indexes for a plot.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for list parsing and error reporting.
+ *      RawPlot *plot            - Plot whose variable table is searched.
+ *      Tcl_Obj *namesObj        - Tcl list object containing vector names to resolve.
+ *      Tcl_Size *numVarsPtr     - Output location for the number of resolved variables.
+ *      Tcl_Size **varIndexesPtr - Output location for the allocated array of resolved variable indexes.
+ *
+ * Results:
+ *      Returns TCL_OK if namesObj is a valid list and every listed vector name is resolved successfully.
+ *      Returns TCL_ERROR if namesObj is not a valid list, an index array allocation would overflow, a vector name is
+ *      not found, or the same variable is requested more than once.
+ *
+ * Side Effects:
+ *      Allocates a Tcl-managed array of Tcl_Size indexes and stores it in *varIndexesPtr.
+ *      Stores the number of resolved variables in *numVarsPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The returned index array is owned by the caller and must be released with Tcl_Free().
+ *      An empty name list is accepted. In that case, *numVarsPtr is set to 0 and *varIndexesPtr is set to NULL.
+ *      Name lookup is delegated to RawPlotFindVariable(), so matching follows the same exact-name rules as the
+ *      single-vector command.
+ *      Duplicate variables are rejected because dictionary output cannot usefully represent the same variable key
+ *      more than once.
+ *      The returned indexes are physical indexes into plot->header.variables, not necessarily the numeric indexes
+ *      written in the raw-file Variables section.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr) {
+    Tcl_Size objc;
+    Tcl_Obj **objv;
+    Tcl_Size *indexes = NULL;
+    if (Tcl_ListObjGetElements(interp, namesObj, &objc, &objv) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (objc == 0) {
+        *numVarsPtr = 0;
+        *varIndexesPtr = NULL;
+        return TCL_OK;
+    }
+    if ((size_t)objc > SIZE_MAX / sizeof(Tcl_Size)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index array overflow", -1));
+        return TCL_ERROR;
+    }
+    indexes = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)objc);
+    for (Tcl_Size i = 0; i < objc; i++) {
+        const char *name = Tcl_GetString(objv[i]);
+        Tcl_Size index;
+        if (RawPlotFindVariable(interp, plot, name, &index) != TCL_OK) {
+            Tcl_Free((char *)indexes);
+            return TCL_ERROR;
+        }
+        /*
+         * Dict output cannot represent duplicate requested keys usefully.
+         */
+        for (Tcl_Size j = 0; j < i; j++) {
+            if (indexes[j] == index) {
+                Tcl_Free((char *)indexes);
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("duplicate raw vector \"%s\" requested", name));
+                return TCL_ERROR;
+            }
+        }
+        indexes[i] = index;
+    }
+    *numVarsPtr = objc;
+    *varIndexesPtr = indexes;
+    return TCL_OK;
 }
 
 //***  RawBinaryReadExactBytes function
@@ -1846,9 +1968,9 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
                             Tcl_DStringFree(&ds);
                             Tcl_DStringFree(&lineDs);
                             return TCL_ERROR;
-                        }
+                         }
                     }
-                    if (vecObjs) {
+                    if (vecObjs && vecObjs[valuesSeen]) {
                         if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], var->storage, combined, combinedLen) !=
                             TCL_OK) {
                             Tcl_DStringFree(&ds);
@@ -1867,7 +1989,7 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
                     return TCL_ERROR;
                 }
             }
-            if (vecObjs) {
+            if (vecObjs && vecObjs[valuesSeen]) {
                 if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], var->storage, tokStart, tokLen) != TCL_OK) {
                     Tcl_DStringFree(&lineDs);
                     return TCL_ERROR;
@@ -1972,433 +2094,468 @@ static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind 
     return TCL_OK;
 }
 
-//***  RawPlotAsciiVectorToObj function
+//***  RawBuildVectorResult function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawPlotAsciiVectorToObj --
+ * RawBuildVectorResult --
  *
- *      Reads one variable vector from an ASCII Values: plot into a Tcl list.
+ *      Builds the final Tcl result object from an array of raw vector value lists.
+ *
+ *      The function supports two result shapes:
+ *
+ *          RAW_VECTOR_RESULT_LIST - Return the single selected vector list directly.
+ *          RAW_VECTOR_RESULT_DICT - Return a dictionary mapping vector names to value lists.
  *
  * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle containing channel and decoding state.
- *      RawPlot *plot       - ASCII Values: plot to read from.
- *      Tcl_Size varIndex   - Variable array index to extract.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl list object.
+ *      Tcl_Interp *interp              - Interpreter used for dictionary operations and error reporting.
+ *      RawHeader *h                    - Header containing variable names for dictionary keys.
+ *      Tcl_Size numVars                - Number of selected vectors and entries in vecObjs/varIndexes.
+ *      Tcl_Size *varIndexes            - Array of physical variable indexes into h->variables.
+ *      Tcl_Obj **vecObjs               - Array of Tcl list objects containing decoded vector values.
+ *      RawVectorResultMode resultMode  - Requested result shape.
+ *      Tcl_Obj **objPtr                - Output location for the constructed result object.
  *
  * Results:
- *      Returns TCL_OK if the requested vector range is read successfully.
- *      Returns TCL_ERROR on wrong data kind, missing point index, invalid range, seek failure, or parse error.
+ *      Returns TCL_OK if the result object is built successfully.
+ *      Returns TCL_ERROR if resultMode is invalid, or if list result mode is requested with anything other than one
+ *      selected vector.
  *
  * Side Effects:
- *      Seeks rf->chan to the requested first point.
- *      Reads and parses count ASCII points.
- *      Stores a newly created list object in *objPtr on success.
- *      Sets the interpreter result on failure.
+ *      In RAW_VECTOR_RESULT_LIST mode, stores vecObjs[0] in *objPtr and frees only the vecObjs array.
+ *
+ *      In RAW_VECTOR_RESULT_DICT mode, creates a new dictionary, inserts each vector list under its variable name,
+ *      stores the dictionary in *objPtr, and frees the vecObjs array.
+ *
+ *      On error, releases all vector objects with RawFreeVectorObjects() and sets the interpreter result.
  *
  * Notes:
- *      Uses pointOffsets built by RawPlotScanAsciiValues().
- *      Values are selected by variable array index and physical order in the Values: block.
- *      Real values are appended as doubles; complex values as {real imag} lists.
- *      A count of zero returns an empty list without seeking or reading.
+ *      On success, ownership of the returned Tcl object is transferred to the caller through *objPtr.
+ *      On success, the vecObjs pointer array is always freed by this function.
+ *      In dictionary mode, variable names are taken from h->variables[varIndexes[i]].name. Missing names are
+ *      represented as empty strings.
+ *      varIndexes contains physical indexes into h->variables, not necessarily the numeric indexes written in the
+ *      raw-file Variables section.
+ *      Duplicate dictionary keys should already have been rejected by the variable-resolution step.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawPlotAsciiVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
-                                   Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr) {
-    RawHeader *h = &plot->header;
-    Tcl_Obj *listObj;
-
-    if (plot->dataKind != DATA_VALUES) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Values: plot", -1));
-        return TCL_ERROR;
-    }
-    if (plot->pointOffsets == NULL && h->numPoints > 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII plot has no point offset index", -1));
-        return TCL_ERROR;
-    }
-    if (varIndex < 0 || varIndex >= h->numVariables) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index out of range", -1));
-        return TCL_ERROR;
-    }
-    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector range out of range", -1));
-        return TCL_ERROR;
-    }
-    listObj = Tcl_NewListObj(0, NULL);
-    if (count == 0) {
-        *objPtr = listObj;
+static int RawBuildVectorResult(Tcl_Interp *interp, RawHeader *h, Tcl_Size numVars, Tcl_Size *varIndexes,
+                                Tcl_Obj **vecObjs, RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
+    if (resultMode == RAW_VECTOR_RESULT_LIST) {
+        if (numVars != 1) {
+            RawFreeVectorObjects(vecObjs, numVars);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("list result mode requires exactly one vector", -1));
+            return TCL_ERROR;
+        }
+        *objPtr = vecObjs[0];
+        Tcl_Free((char *)vecObjs);
         return TCL_OK;
     }
-    if (Tcl_Seek(rf->chan, plot->pointOffsets[firstPoint], SEEK_SET) < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to ASCII raw point", -1));
-        return TCL_ERROR;
-    }
-    for (Tcl_Size i = 0; i < count; i++) {
-        if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, varIndex, listObj, NULL) != TCL_OK) {
-            return TCL_ERROR;
-        }
-    }
-    *objPtr = listObj;
-    return TCL_OK;
-}
+    if (resultMode == RAW_VECTOR_RESULT_DICT) {
+        Tcl_Obj *dictObj = Tcl_NewDictObj();
+        for (Tcl_Size i = 0; i < numVars; i++) {
+            RawVariable *var = &h->variables[varIndexes[i]];
+            const char *name = var->name ? var->name : "";
 
-//***  RawPlotAsciiDictToObj function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotAsciiDictToObj --
- *
- *      Reads all variable vectors from an ASCII Values: plot over a point range into a Tcl dictionary.
- *
- * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle containing channel and decoding state.
- *      RawPlot *plot       - ASCII Values: plot to read from.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl dictionary object.
- *
- * Results:
- *      Returns TCL_OK if the requested range is read and the dictionary is created.
- *      Returns TCL_ERROR on wrong data kind, missing point index, invalid range, allocation overflow, seek failure,
- *      or parse error.
- *
- * Side Effects:
- *      Allocates temporary per-variable list objects and a result dictionary.
- *      Seeks rf->chan to the requested first point when count is nonzero.
- *      Reads and parses count ASCII points.
- *      Stores the new dictionary in *objPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Uses pointOffsets built by RawPlotScanAsciiValues().
- *      Values are assigned by variable array order in the Values: block.
- *      Real values are appended as doubles; complex values as {real imag} lists.
- *      A count of zero returns all variable names mapped to empty lists.
- *      Temporary objects are released on error.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotAsciiDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                                 Tcl_Obj **objPtr) {
-    RawHeader *h = &plot->header;
-    Tcl_Obj **vecObjs;
-    Tcl_Obj *dictObj;
-    if (plot->dataKind != DATA_VALUES) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Values: plot", -1));
-        return TCL_ERROR;
-    }
-    if (plot->pointOffsets == NULL && h->numPoints > 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII plot has no point offset index", -1));
-        return TCL_ERROR;
-    }
-    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw dict range out of range", -1));
-        return TCL_ERROR;
-    }
-    if ((size_t)h->numVariables > SIZE_MAX / sizeof(Tcl_Obj *)) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw dict vector object array overflow", -1));
-        return TCL_ERROR;
-    }
-    vecObjs = (Tcl_Obj **)Tcl_Alloc(sizeof(Tcl_Obj *) * (size_t)h->numVariables);
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        vecObjs[i] = Tcl_NewListObj(0, NULL);
-        Tcl_IncrRefCount(vecObjs[i]);
-    }
-    if (count > 0) {
-        if (Tcl_Seek(rf->chan, plot->pointOffsets[firstPoint], SEEK_SET) < 0) {
-            for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                Tcl_DecrRefCount(vecObjs[i]);
-            }
-            Tcl_Free((char *)vecObjs);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to ASCII raw point", -1));
-            return TCL_ERROR;
-        }
-        for (Tcl_Size point = 0; point < count; point++) {
-            if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, -1, NULL, vecObjs) != TCL_OK) {
-                for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                    Tcl_DecrRefCount(vecObjs[i]);
-                }
-                Tcl_Free((char *)vecObjs);
-                return TCL_ERROR;
-            }
-        }
-    }
-    dictObj = Tcl_NewDictObj();
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        const char *name = h->variables[i].name ? h->variables[i].name : "";
-
-        Tcl_DictObjPut(interp, dictObj, Tcl_NewStringObj(name, -1), vecObjs[i]);
-        Tcl_DecrRefCount(vecObjs[i]);
-    }
-    Tcl_Free((char *)vecObjs);
-    *objPtr = dictObj;
-    return TCL_OK;
-}
-
-//***  RawPlotBinaryVectorToObj function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotBinaryVectorToObj --
- *
- *      Reads one variable vector from a Binary: plot over a point range into a Tcl list.
- *
- * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle containing the channel.
- *      RawPlot *plot       - Binary plot to read from.
- *      Tcl_Size varIndex   - Variable array index to extract.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl list object.
- *
- * Results:
- *      Returns TCL_OK if the requested vector range is read and decoded.
- *      Returns TCL_ERROR on wrong data kind, invalid variable/range, invalid stride, chunk-size overflow, seek/read
- *      failure, or unknown value storage.
- *
- * Side Effects:
- *      Allocates a temporary chunk buffer.
- *      Seeks and reads from rf->chan.
- *      Stores a newly created list object in *objPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Assumes point-major binary storage and resolved variable offsets.
- *      Data is read in chunks rather than decoding the whole block at once.
- *      Real values are appended as doubles; complex values as {real imag} lists.
- *      A count of zero returns an empty list without reading.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotBinaryVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
-                                    Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr) {
-    RawHeader *h = &plot->header;
-    RawVariable *var;
-    Tcl_Obj *listObj;
-    unsigned char *buf = NULL;
-    Tcl_Size maxChunkBytes = 1024 * 1024;
-    Tcl_Size chunkPoints;
-    Tcl_Size done = 0;
-    if (plot->dataKind != DATA_BINARY) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Binary: plot", -1));
-        return TCL_ERROR;
-    }
-    if (varIndex < 0 || varIndex >= h->numVariables) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index out of range", -1));
-        return TCL_ERROR;
-    }
-    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector range out of range", -1));
-        return TCL_ERROR;
-    }
-    var = &h->variables[varIndex];
-    if (h->pointStrideBytes <= 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw point stride", -1));
-        return TCL_ERROR;
-    }
-    if (count == 0) {
-        *objPtr = Tcl_NewListObj(0, NULL);
-        return TCL_OK;
-    }
-    chunkPoints = maxChunkBytes / h->pointStrideBytes;
-    if (chunkPoints < 1) {
-        chunkPoints = 1;
-    }
-    if (chunkPoints > count) {
-        chunkPoints = count;
-    }
-    if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw chunk size overflow", -1));
-        return TCL_ERROR;
-    }
-    buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
-    listObj = Tcl_NewListObj(0, NULL);
-    while (done < count) {
-        Tcl_Size thisPoints = count - done;
-        Tcl_Size thisBytes;
-        Tcl_WideInt offset;
-
-        if (thisPoints > chunkPoints) {
-            thisPoints = chunkPoints;
-        }
-        thisBytes = thisPoints * h->pointStrideBytes;
-        offset = plot->dataOffset + (Tcl_WideInt)(firstPoint + done) * (Tcl_WideInt)h->pointStrideBytes;
-        if (Tcl_Seek(rf->chan, offset, SEEK_SET) < 0) {
-            Tcl_Free((char *)buf);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside raw binary data", -1));
-            return TCL_ERROR;
-        }
-        if (RawBinaryReadExactBytes(interp, rf->chan, buf, thisBytes) != TCL_OK) {
-            Tcl_Free((char *)buf);
-            return TCL_ERROR;
-        }
-        for (Tcl_Size i = 0; i < thisPoints; i++) {
-            const unsigned char *p = buf + i * h->pointStrideBytes + var->offsetBytes;
-            if (RawAppendBinaryValue(interp, listObj, var->storage, p) != TCL_OK) {
-                Tcl_Free((char *)buf);
-                return TCL_ERROR;
-            }
-        }
-        done += thisPoints;
-    }
-    Tcl_Free((char *)buf);
-    *objPtr = listObj;
-    return TCL_OK;
-}
-
-//***  RawPlotBinaryDictToObj function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotBinaryDictToObj --
- *
- *      Reads all variable vectors from a Binary: plot over a point range into a Tcl dictionary.
- *
- * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle containing the channel.
- *      RawPlot *plot       - Binary plot to read from.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl dictionary object.
- *
- * Results:
- *      Returns TCL_OK if the requested range is read and decoded.
- *      Returns TCL_ERROR on wrong data kind, invalid range, invalid stride, allocation/chunk overflow, seek/read
- *      failure, or unknown value storage.
- *
- * Side Effects:
- *      Allocates temporary per-variable list objects and a binary chunk buffer.
- *      Seeks and reads from rf->chan.
- *      Stores a newly created dictionary in *objPtr on success.
- *      Releases temporary objects and buffers on error.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Assumes point-major binary storage and resolved variable offsets.
- *      Data is read in chunks rather than decoding the whole block at once.
- *      Dictionary keys are variable names; values are per-variable lists.
- *      Real values are appended as doubles; complex values as {real imag} lists.
- *      A count of zero returns all variable names mapped to empty lists.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotBinaryDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                            Tcl_Obj **objPtr) {
-    RawHeader *h = &plot->header;
-    Tcl_Obj **vecObjs = NULL;
-    Tcl_Obj *dictObj = NULL;
-    unsigned char *buf = NULL;
-    Tcl_Size maxChunkBytes = 1024 * 1024;
-    Tcl_Size chunkPoints;
-    Tcl_Size done = 0;
-    if (plot->dataKind != DATA_BINARY) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Binary: plot", -1));
-        return TCL_ERROR;
-    }
-    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw dict range out of range", -1));
-        return TCL_ERROR;
-    }
-    if (h->pointStrideBytes <= 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw point stride", -1));
-        return TCL_ERROR;
-    }
-    if ((size_t)h->numVariables > SIZE_MAX / sizeof(Tcl_Obj *)) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw dict vector object array overflow", -1));
-        return TCL_ERROR;
-    }
-    vecObjs = (Tcl_Obj **)Tcl_Alloc(sizeof(Tcl_Obj *) * (size_t)h->numVariables);
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        vecObjs[i] = Tcl_NewListObj(0, NULL);
-        Tcl_IncrRefCount(vecObjs[i]);
-    }
-    if (count == 0) {
-        dictObj = Tcl_NewDictObj();
-        for (Tcl_Size i = 0; i < h->numVariables; i++) {
-            const char *name = h->variables[i].name ? h->variables[i].name : "";
             Tcl_DictObjPut(interp, dictObj, Tcl_NewStringObj(name, -1), vecObjs[i]);
-            Tcl_DecrRefCount(vecObjs[i]);
         }
         Tcl_Free((char *)vecObjs);
         *objPtr = dictObj;
         return TCL_OK;
     }
-    chunkPoints = maxChunkBytes / h->pointStrideBytes;
-    if (chunkPoints < 1) {
-        chunkPoints = 1;
-    }
-    if (chunkPoints > count) {
-        chunkPoints = count;
-    }
-    if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
-        for (Tcl_Size i = 0; i < h->numVariables; i++) {
-            Tcl_DecrRefCount(vecObjs[i]);
-        }
-        Tcl_Free((char *)vecObjs);
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw chunk size overflow", -1));
+    RawFreeVectorObjects(vecObjs, numVars);
+    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw vector result mode", -1));
+    return TCL_ERROR;
+}
+
+//***  RawPlotResolveAllVariables function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotResolveAllVariables --
+ *
+ *      Builds an owned index array selecting every variable in a plot.
+ *
+ *      This helper is used by full-vector reads, such as the vectors command with -all, to reuse the same selected
+ *      vector reading path that is used for an explicit list of vector names.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      RawPlot *plot            - Plot whose complete variable table is selected.
+ *      Tcl_Size *numVarsPtr     - Output location for the number of selected variables.
+ *      Tcl_Size **varIndexesPtr - Output location for the allocated array of selected variable indexes.
+ *
+ * Results:
+ *      Returns TCL_OK if the index array is built successfully.
+ *      Returns TCL_ERROR if the variable count is invalid or the index array allocation would overflow.
+ *
+ * Side Effects:
+ *      Allocates a Tcl-managed array of Tcl_Size indexes and stores it in *varIndexesPtr.
+ *      Stores the number of selected variables in *numVarsPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The returned index array is owned by the caller and must be released with Tcl_Free().
+ *      If the plot has no variables, *numVarsPtr is set to 0 and *varIndexesPtr is set to NULL.
+ *      The generated indexes are physical indexes into plot->header.variables, in the same order as values appear
+ *      in the raw-file data block.
+ *      This function does not inspect variable names and therefore cannot produce duplicate dictionary keys unless
+ *      the raw file itself contains duplicate variable names.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotResolveAllVariables(Tcl_Interp *interp, RawPlot *plot, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_Size *indexes = NULL;
+    if (h->numVariables < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw variable count", -1));
         return TCL_ERROR;
     }
-    buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
-    while (done < count) {
-        Tcl_Size thisPoints = count - done;
-        Tcl_Size thisBytes;
-        Tcl_WideInt offset;
-        if (thisPoints > chunkPoints) {
-            thisPoints = chunkPoints;
-        }
-        thisBytes = thisPoints * h->pointStrideBytes;
-        offset = plot->dataOffset + (Tcl_WideInt)(firstPoint + done) * (Tcl_WideInt)h->pointStrideBytes;
-        if (Tcl_Seek(rf->chan, offset, SEEK_SET) < 0) {
-            Tcl_Free((char *)buf);
-            for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                Tcl_DecrRefCount(vecObjs[i]);
-            }
-            Tcl_Free((char *)vecObjs);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside raw binary data", -1));
+    if (h->numVariables == 0) {
+        *numVarsPtr = 0;
+        *varIndexesPtr = NULL;
+        return TCL_OK;
+    }
+    if ((size_t)h->numVariables > SIZE_MAX / sizeof(Tcl_Size)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index array overflow", -1));
+        return TCL_ERROR;
+    }
+    indexes = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)h->numVariables);
+    for (Tcl_Size i = 0; i < h->numVariables; i++) {
+        indexes[i] = i;
+    }
+    *numVarsPtr = h->numVariables;
+    *varIndexesPtr = indexes;
+    return TCL_OK;
+}
+
+//***  RawPlotBinaryReadVectorsToObj function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotBinaryReadVectorsToObj --
+ *
+ *      Reads one or more selected vectors from a Binary: raw-data block and builds the requested Tcl result object.
+ *
+ *      The function reads the requested point range in binary chunks. Each chunk contains complete raw points. For each
+ *      point, only the selected variable offsets are decoded and appended to their corresponding Tcl value lists.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp              - Interpreter used for error reporting and Tcl object operations.
+ *      RawFile *rf                     - Open raw-file handle containing the channel to read from.
+ *      RawPlot *plot                   - Binary plot to read.
+ *      Tcl_Size numVars                - Number of selected variables.
+ *      Tcl_Size *varIndexes            - Array of physical variable indexes into plot->header.variables.
+ *      Tcl_Size firstPoint             - First point index to read.
+ *      Tcl_Size count                  - Number of points to read.
+ *      RawVectorResultMode resultMode  - Requested result shape.
+ *      Tcl_Obj **objPtr                - Output location for the resulting Tcl object.
+ *
+ * Results:
+ *      Returns TCL_OK if the requested vectors are read, decoded, and assembled successfully.
+ *      Returns TCL_ERROR if the plot is not binary, the range is invalid, a selected variable index is out of range,
+ *      the result mode is incompatible with the number of selected variables, a seek/read fails, or binary value
+ *      decoding fails.
+ *
+ * Side Effects:
+ *      Seeks and reads from rf->chan.
+ *      Allocates a temporary binary chunk buffer.
+ *      Allocates one Tcl list object per selected variable.
+ *      Appends decoded values to the selected vector lists.
+ *      Stores the final Tcl result object in *objPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      RAW_VECTOR_RESULT_LIST requires exactly one selected variable and returns that vector list directly.
+ *      RAW_VECTOR_RESULT_DICT returns a dictionary mapping selected variable names to their value lists.
+ *      A zero-variable selection is accepted only for dictionary result mode, where it returns an empty dictionary.
+ *      Binary data is read in chunks of up to approximately one megabyte, rounded down to a whole number of points.
+ *      Very large point strides are handled by reading at least one point per chunk.
+ *      The function reads complete point records even when only a subset of variables is requested, because binary
+ *      raw data is stored point-major.
+ *      Value decoding is delegated to RawAppendBinaryValue().
+ *      Final result construction and ownership transfer are delegated to RawBuildVectorResult().
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotBinaryReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                         Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                         RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_Obj **vecObjs = NULL;
+    unsigned char *buf = NULL;
+    Tcl_Size maxChunkBytes = 1024 * 1024;
+    Tcl_Size chunkPoints;
+    Tcl_Size done = 0;
+    if (plot->dataKind != DATA_BINARY) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Binary: plot", -1));
+        return TCL_ERROR;
+    }
+    if (resultMode == RAW_VECTOR_RESULT_LIST && numVars != 1) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("vector list result requires exactly one selected vector", -1));
+        return TCL_ERROR;
+    }
+    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector range out of range", -1));
+        return TCL_ERROR;
+    }
+    if (h->pointStrideBytes <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw point stride", -1));
+        return TCL_ERROR;
+    }
+    if (numVars == 0) {
+        if (resultMode == RAW_VECTOR_RESULT_LIST) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("vector list result requires one selected vector", -1));
             return TCL_ERROR;
         }
-        if (RawBinaryReadExactBytes(interp, rf->chan, buf, thisBytes) != TCL_OK) {
-            Tcl_Free((char *)buf);
-            for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                Tcl_DecrRefCount(vecObjs[i]);
-            }
+        *objPtr = Tcl_NewDictObj();
+        return TCL_OK;
+    }
+    if ((size_t)numVars > SIZE_MAX / sizeof(Tcl_Obj *)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector object array overflow", -1));
+        return TCL_ERROR;
+    }
+    vecObjs = (Tcl_Obj **)Tcl_Alloc(sizeof(Tcl_Obj *) * (size_t)numVars);
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        if (varIndexes[i] < 0 || varIndexes[i] >= h->numVariables) {
             Tcl_Free((char *)vecObjs);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index out of range", -1));
             return TCL_ERROR;
         }
-        for (Tcl_Size point = 0; point < thisPoints; point++) {
-            const unsigned char *pointPtr = buf + point * h->pointStrideBytes;
-            for (Tcl_Size varIndex = 0; varIndex < h->numVariables; varIndex++) {
-                RawVariable *var = &h->variables[varIndex];
-                const unsigned char *p = pointPtr + var->offsetBytes;
-                if (RawAppendBinaryValue(interp, vecObjs[varIndex], var->storage, p) != TCL_OK) {
-                    Tcl_Free((char *)buf);
-                    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                        Tcl_DecrRefCount(vecObjs[i]);
+        vecObjs[i] = Tcl_NewListObj(0, NULL);
+    }
+    if (count > 0) {
+        chunkPoints = maxChunkBytes / h->pointStrideBytes;
+        if (chunkPoints < 1) {
+            chunkPoints = 1;
+        }
+        if (chunkPoints > count) {
+            chunkPoints = count;
+        }
+        if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
+            RawFreeVectorObjects(vecObjs, numVars);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw chunk size overflow", -1));
+            return TCL_ERROR;
+        }
+        buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
+        while (done < count) {
+            Tcl_Size thisPoints = count - done;
+            Tcl_Size thisBytes;
+            Tcl_WideInt offset;
+            if (thisPoints > chunkPoints) {
+                thisPoints = chunkPoints;
+            }
+            thisBytes = thisPoints * h->pointStrideBytes;
+            offset = plot->dataOffset + (Tcl_WideInt)(firstPoint + done) * (Tcl_WideInt)h->pointStrideBytes;
+            if (Tcl_Seek(rf->chan, offset, SEEK_SET) < 0) {
+                Tcl_Free((char *)buf);
+                RawFreeVectorObjects(vecObjs, numVars);
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside raw binary data", -1));
+                return TCL_ERROR;
+            }
+            if (RawBinaryReadExactBytes(interp, rf->chan, buf, thisBytes) != TCL_OK) {
+                Tcl_Free((char *)buf);
+                RawFreeVectorObjects(vecObjs, numVars);
+                return TCL_ERROR;
+            }
+            for (Tcl_Size point = 0; point < thisPoints; point++) {
+                const unsigned char *pointPtr = buf + point * h->pointStrideBytes;
+                for (Tcl_Size selected = 0; selected < numVars; selected++) {
+                    RawVariable *var = &h->variables[varIndexes[selected]];
+                    const unsigned char *p = pointPtr + var->offsetBytes;
+                    if (RawAppendBinaryValue(interp, vecObjs[selected], var->storage, p) != TCL_OK) {
+                        Tcl_Free((char *)buf);
+                        RawFreeVectorObjects(vecObjs, numVars);
+                        return TCL_ERROR;
                     }
-                    Tcl_Free((char *)vecObjs);
-                    return TCL_ERROR;
                 }
             }
+            done += thisPoints;
         }
-        done += thisPoints;
+        Tcl_Free((char *)buf);
     }
-    Tcl_Free((char *)buf);
-    dictObj = Tcl_NewDictObj();
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        const char *name = h->variables[i].name ? h->variables[i].name : "";
-        Tcl_DictObjPut(interp, dictObj, Tcl_NewStringObj(name, -1), vecObjs[i]);
-        Tcl_DecrRefCount(vecObjs[i]);
+    return RawBuildVectorResult(interp, h, numVars, varIndexes, vecObjs, resultMode, objPtr);
+}
+
+//***  RawPlotAsciiReadVectorsToObj function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotAsciiReadVectorsToObj --
+ *
+ *      Reads one or more selected vectors from an ASCII Values: raw-data block and builds the requested Tcl result
+ *      object.
+ *
+ *      The function seeks to the first requested point using the plot's ASCII point-offset index, then parses each
+ *      requested point once. A sparse per-variable output array is used so RawAsciiReadOnePoint() scans the complete
+ *      point but appends values only for the selected variables.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp              - Interpreter used for error reporting and Tcl object operations.
+ *      RawFile *rf                     - Open raw-file handle containing the channel and text decoding state.
+ *      RawPlot *plot                   - ASCII Values: plot to read.
+ *      Tcl_Size numVars                - Number of selected variables.
+ *      Tcl_Size *varIndexes            - Array of physical variable indexes into plot->header.variables.
+ *      Tcl_Size firstPoint             - First point index to read.
+ *      Tcl_Size count                  - Number of points to read.
+ *      RawVectorResultMode resultMode  - Requested result shape.
+ *      Tcl_Obj **objPtr                - Output location for the resulting Tcl object.
+ *
+ * Results:
+ *      Returns TCL_OK if the requested vectors are read, parsed, and assembled successfully.
+ *      Returns TCL_ERROR if the plot is not an ASCII Values: plot, the point-offset index is missing, the range is
+ *      invalid, a selected variable index is out of range, the result mode is incompatible with the number of selected
+ *      variables, a seek/read/decode fails, or ASCII value parsing fails.
+ *
+ * Side Effects:
+ *      Seeks and reads from rf->chan.
+ *      Allocates one Tcl list object per selected variable.
+ *      Allocates a temporary sparse array indexed by all plot variables when count is non-zero.
+ *      Appends parsed values to the selected vector lists.
+ *      Stores the final Tcl result object in *objPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      RAW_VECTOR_RESULT_LIST requires exactly one selected variable and returns that vector list directly.
+ *      RAW_VECTOR_RESULT_DICT returns a dictionary mapping selected variable names to their value lists.
+ *      A zero-variable selection is accepted only for dictionary result mode, where it returns an empty dictionary.
+ *      allVecObjs is indexed by physical variable order. Entries for unselected variables are NULL, so the ASCII
+ *      point parser still consumes every value in the point but appends only selected values.
+ *      ASCII point parsing, including multi-line points and split Xyce-style complex values, is delegated to
+ *      RawAsciiReadOnePoint().
+ *      Final result construction and ownership transfer are delegated to RawBuildVectorResult().
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotAsciiReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                        Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                        RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_Obj **selectedVecObjs = NULL;
+    Tcl_Obj **allVecObjs = NULL;
+    if (plot->dataKind != DATA_VALUES) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("selected plot is not a Values: plot", -1));
+        return TCL_ERROR;
     }
-    Tcl_Free((char *)vecObjs);
-    *objPtr = dictObj;
-    return TCL_OK;
+    if (resultMode == RAW_VECTOR_RESULT_LIST && numVars != 1) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("vector list result requires exactly one selected vector", -1));
+        return TCL_ERROR;
+    }
+    if (plot->pointOffsets == NULL && h->numPoints > 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII plot has no point offset index", -1));
+        return TCL_ERROR;
+    }
+    if (firstPoint < 0 || count < 0 || firstPoint > h->numPoints || count > h->numPoints - firstPoint) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector range out of range", -1));
+        return TCL_ERROR;
+    }
+    if (numVars == 0) {
+        if (resultMode == RAW_VECTOR_RESULT_LIST) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("vector list result requires one selected vector", -1));
+            return TCL_ERROR;
+        }
+        *objPtr = Tcl_NewDictObj();
+        return TCL_OK;
+    }
+    if ((size_t)numVars > SIZE_MAX / sizeof(Tcl_Obj *)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector object array overflow", -1));
+        return TCL_ERROR;
+    }
+    if ((size_t)h->numVariables > SIZE_MAX / sizeof(Tcl_Obj *)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw full vector object array overflow", -1));
+        return TCL_ERROR;
+    }
+    selectedVecObjs = (Tcl_Obj **)Tcl_Alloc(sizeof(Tcl_Obj *) * (size_t)numVars);
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        if (varIndexes[i] < 0 || varIndexes[i] >= h->numVariables) {
+            Tcl_Free((char *)selectedVecObjs);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index out of range", -1));
+            return TCL_ERROR;
+        }
+        selectedVecObjs[i] = Tcl_NewListObj(0, NULL);
+    }
+    if (count > 0) {
+        allVecObjs = (Tcl_Obj **)Tcl_Alloc(sizeof(Tcl_Obj *) * (size_t)h->numVariables);
+        for (Tcl_Size i = 0; i < h->numVariables; i++) {
+            allVecObjs[i] = NULL;
+        }
+        for (Tcl_Size i = 0; i < numVars; i++) {
+            allVecObjs[varIndexes[i]] = selectedVecObjs[i];
+        }
+        if (Tcl_Seek(rf->chan, plot->pointOffsets[firstPoint], SEEK_SET) < 0) {
+            Tcl_Free((char *)allVecObjs);
+            RawFreeVectorObjects(selectedVecObjs, numVars);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to ASCII raw point", -1));
+            return TCL_ERROR;
+        }
+        for (Tcl_Size point = 0; point < count; point++) {
+            if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, -1, NULL, allVecObjs) != TCL_OK) {
+                Tcl_Free((char *)allVecObjs);
+                RawFreeVectorObjects(selectedVecObjs, numVars);
+                return TCL_ERROR;
+            }
+        }
+        Tcl_Free((char *)allVecObjs);
+    }
+    return RawBuildVectorResult(interp, h, numVars, varIndexes, selectedVecObjs, resultMode, objPtr);
+}
+
+//***  RawPlotReadVectorsToObj function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotReadVectorsToObj --
+ *
+ *      Dispatches a selected-vector read request to the data-block-specific reader for a plot.
+ *
+ *      This is the format-independent entry point used by vector, vectors, and full-dictionary reads after the caller
+ *      has resolved the requested variables and parsed the requested point range.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp              - Interpreter used for error reporting.
+ *      RawFile *rf                     - Open raw-file handle containing the channel and decoding state.
+ *      RawPlot *plot                   - Plot to read from.
+ *      Tcl_Size numVars                - Number of selected variables.
+ *      Tcl_Size *varIndexes            - Array of physical variable indexes into plot->header.variables.
+ *      Tcl_Size firstPoint             - First point index to read.
+ *      Tcl_Size count                  - Number of points to read.
+ *      RawVectorResultMode resultMode  - Requested result shape.
+ *      Tcl_Obj **objPtr                - Output location for the resulting Tcl object.
+ *
+ * Results:
+ *      Returns TCL_OK if the request is handled successfully by the appropriate backend.
+ *      Returns TCL_ERROR if the plot data kind is unknown or if the selected backend reports an error.
+ *
+ * Side Effects:
+ *      May seek and read from rf->chan through the selected backend.
+ *      Stores the final Tcl result object in *objPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      DATA_BINARY plots are handled by RawPlotBinaryReadVectorsToObj().
+ *      DATA_VALUES plots are handled by RawPlotAsciiReadVectorsToObj().
+ *      The function does not validate varIndexes, firstPoint, count, or resultMode itself; detailed validation is
+ *      delegated to the selected backend.
+ *      The result shape is controlled by resultMode. Single-vector reads use RAW_VECTOR_RESULT_LIST, while selected
+ *      vector and full-dictionary reads use RAW_VECTOR_RESULT_DICT.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                   Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                   RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
+    if (plot->dataKind == DATA_BINARY) {
+        return RawPlotBinaryReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count, resultMode,
+                                             objPtr);
+    }
+    if (plot->dataKind == DATA_VALUES) {
+        return RawPlotAsciiReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count, resultMode,
+                                            objPtr);
+    }
+    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw plot data kind", -1));
+    return TCL_ERROR;
 }
 
 //***  RawPlotVectorToObj function
@@ -2407,86 +2564,42 @@ static int RawPlotBinaryDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot
  *
  * RawPlotVectorToObj --
  *
- *      Reads one variable vector from a plot into a Tcl list, dispatching by data kind.
+ *      Reads one selected vector from a raw plot and returns it as a Tcl list object.
+ *
+ *      This is a compatibility wrapper for the single-vector command. The actual binary/ASCII reading and decoding is
+ *      performed by the unified selected-vector reader.
  *
  * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle.
- *      RawPlot *plot       - Plot to read from.
- *      Tcl_Size varIndex   - Variable array index to extract.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl list object.
+ *      Tcl_Interp *interp   - Interpreter used for error reporting.
+ *      RawFile *rf          - Open raw-file handle containing the channel and decoding state.
+ *      RawPlot *plot        - Plot to read from.
+ *      Tcl_Size varIndex    - Physical variable index into plot->header.variables.
+ *      Tcl_Size firstPoint  - First point index to read.
+ *      Tcl_Size count       - Number of points to read.
+ *      Tcl_Obj **objPtr     - Output location for the resulting Tcl list object.
  *
  * Results:
- *      Returns TCL_OK if the requested vector range is read successfully.
- *      Returns TCL_ERROR on unknown data kind or backend read/conversion failure.
+ *      Returns TCL_OK if the vector is read and stored in *objPtr successfully.
+ *      Returns TCL_ERROR if the unified selected-vector reader reports an error.
  *
  * Side Effects:
- *      Calls the Binary: or Values: vector reader.
- *      Stores a newly created list object in *objPtr on success.
+ *      May seek and read from rf->chan through RawPlotReadVectorsToObj().
+ *      Stores the resulting Tcl list object in *objPtr on success.
  *      Sets the interpreter result on failure.
  *
  * Notes:
- *      Detailed range and variable validation is delegated to the selected backend.
- *      Real values are returned as doubles; complex values as {real imag} lists.
+ *      The returned result shape is always a plain Tcl list of values.
+ *      This function passes a one-element selection to RawPlotReadVectorsToObj() using RAW_VECTOR_RESULT_LIST.
+ *      The variable index is a physical index into plot->header.variables, not necessarily the numeric index written
+ *      in the raw-file Variables section.
+ *      This wrapper preserves the old vector-command behaviour while sharing the same backend used by vectors and
+ *      vectors -all.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
-                              Tcl_Size count, Tcl_Obj **objPtr) {
-    if (plot->dataKind == DATA_BINARY) {
-        return RawPlotBinaryVectorToObj(interp, rf, plot, varIndex, firstPoint, count, objPtr);
-    }
-    if (plot->dataKind == DATA_VALUES) {
-        return RawPlotAsciiVectorToObj(interp, rf, plot, varIndex, firstPoint, count, objPtr);
-    }
-    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw plot data kind", -1));
-    return TCL_ERROR;
-}
-
-//***  RawPlotDictToObj function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotDictToObj --
- *
- *      Reads all variable vectors from a plot over a point range into a Tcl dictionary, dispatching by data kind.
- *
- * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      RawFile *rf         - Open raw-file handle.
- *      RawPlot *plot       - Plot to read from.
- *      Tcl_Size firstPoint - First point index to read.
- *      Tcl_Size count      - Number of points to read.
- *      Tcl_Obj **objPtr    - Output Tcl dictionary object.
- *
- * Results:
- *      Returns TCL_OK if the requested range is read successfully.
- *      Returns TCL_ERROR on unknown data kind or backend read/conversion failure.
- *
- * Side Effects:
- *      Calls the Binary: or Values: dictionary reader.
- *      Stores a newly created dictionary in *objPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Detailed range validation is delegated to the selected backend.
- *      Dictionary keys are variable names; values are per-variable lists.
- *      Real values are returned as doubles; complex values as {real imag} lists.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                            Tcl_Obj **objPtr) {
-    if (plot->dataKind == DATA_BINARY) {
-        return RawPlotBinaryDictToObj(interp, rf, plot, firstPoint, count, objPtr);
-    }
-    if (plot->dataKind == DATA_VALUES) {
-        return RawPlotAsciiDictToObj(interp, rf, plot, firstPoint, count, objPtr);
-    }
-    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw plot data kind", -1));
-    return TCL_ERROR;
+static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
+                              Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr) {
+    return RawPlotReadVectorsToObj(interp, rf, plot, 1, &varIndex, firstPoint, count, RAW_VECTOR_RESULT_LIST, objPtr);
 }
 
 //***  RawDataKindName function
@@ -2834,8 +2947,11 @@ static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *na
  *
  *      Implements the Tcl command associated with an opened raw-file handle.
  *
- *      A RawFile handle command is created by raw::openraw and stores a pointer to the corresponding RawFile structure
- *      in its ClientData. This function dispatches handle subcommands such as:
+ *      A RawFile handle command is created by ::tclsimrawreader::openraw and stores a pointer to the corresponding
+ *      RawFile structure in its ClientData. This function dispatches handle subcommands for metadata queries,
+ *      lazy vector extraction, and handle cleanup.
+ *
+ *      Supported subcommands are:
  *
  *          $handle close
  *          $handle plots
@@ -2843,7 +2959,11 @@ static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *na
  *          $handle names ?-plot index?
  *          $handle npoints ?-plot index?
  *          $handle vector ?-plot index? name ?-from index? ?-count count?
- *          $handle dict ?-plot index? ?-from index? ?-count count?
+ *          $handle vectors ?-plot index? (-all|nameList) ?-from index? ?-count count?
+ *
+ *      The vector subcommand returns one selected vector as a Tcl list.
+ *      The vectors subcommand returns a dictionary mapping selected vector names to value lists. With -all, vectors
+ *      returns all vectors from the selected plot.
  *
  * Parameters:
  *      void *clientData      - RawFile pointer supplied when the handle command was created.
@@ -2857,16 +2977,22 @@ static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *na
  *      failure.
  *
  * Side Effects:
- *      Dispatches handle subcommands: close, plots, header, names, npoints, vector, and dict.
+ *      Dispatches handle subcommands.
  *      Sets the interpreter result for metadata and data-extraction subcommands.
  *      Deletes the handle command for close, triggering RawFileDeleteProc().
+ *      May seek and read from the underlying raw-file channel for vector extraction.
  *      Sets the interpreter result on failure.
  *
  * Notes:
  *      Plot selection is delegated to RawSelectPlotFromArgs().
  *      Point range parsing is delegated to RawParseRange().
- *      Variable lookup is delegated to RawPlotFindVariable().
- *      Data extraction is lazy and delegated to RawPlotVectorToObj() or RawPlotDictToObj().
+ *      Single-vector lookup is delegated to RawPlotFindVariable().
+ *      Vector-list resolution for the vectors command is delegated to RawPlotResolveVariableList().
+ *      Full-vector selection for vectors -all is delegated to RawPlotResolveAllVariables().
+ *      Data extraction is lazy. The raw data block is read only when vector or vectors is invoked.
+ *      The vector command returns RAW_VECTOR_RESULT_LIST through RawPlotVectorToObj().
+ *      The vectors command returns RAW_VECTOR_RESULT_DICT through RawPlotReadVectorsToObj().
+ *      In the current command grammar, -plot must appear before the vector name list or -all argument.
  *      After close deletes the handle command, the RawFile pointer must not be used again.
  *
  *----------------------------------------------------------------------------------------------------------------------
@@ -2947,14 +3073,58 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
         Tcl_SetObjResult(interp, Tcl_NewWideIntObj((Tcl_WideInt)plot->header.numPoints));
         return TCL_OK;
     }
+    if (strcmp(subcmd, "vectors") == 0) {
+        RawPlot *plot;
+        Tcl_Size next;
+        Tcl_Size firstPoint;
+        Tcl_Size count;
+        Tcl_Size numVars;
+        Tcl_Size *varIndexes = NULL;
+        Tcl_Obj *dictObj;
+        int r;
+        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (next >= objc) {
+            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index? -all|namesList ?-from index? ?-count count?");
+            return TCL_ERROR;
+        }
+        if (strcmp(Tcl_GetString(objv[next]), "-all") == 0) {
+            if (RawPlotResolveAllVariables(interp, plot, &numVars, &varIndexes) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            next++;
+        } else {
+            if (RawPlotResolveVariableList(interp, plot, objv[next], &numVars, &varIndexes) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            next++;
+        }
+        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count) != TCL_OK) {
+            if (varIndexes) {
+                Tcl_Free((char *)varIndexes);
+            }
+            return TCL_ERROR;
+        }
+        r = RawPlotReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count, RAW_VECTOR_RESULT_DICT,
+                                    &dictObj);
+        if (varIndexes) {
+            Tcl_Free((char *)varIndexes);
+        }
+        if (r != TCL_OK) {
+            return TCL_ERROR;
+        }
+        Tcl_SetObjResult(interp, dictObj);
+        return TCL_OK;
+    }
     if (strcmp(subcmd, "vector") == 0) {
         RawPlot *plot;
         Tcl_Size next;
-        const char *name;
-        Tcl_Size varIndex;
-        Tcl_Size from;
+        Tcl_Size firstPoint;
         Tcl_Size count;
+        Tcl_Size varIndex;
         Tcl_Obj *vecObj;
+        const char *name;
         if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
             return TCL_ERROR;
         }
@@ -2963,35 +3133,17 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
             return TCL_ERROR;
         }
         name = Tcl_GetString(objv[next]);
-        next++;
         if (RawPlotFindVariable(interp, plot, name, &varIndex) != TCL_OK) {
             return TCL_ERROR;
         }
-        if (RawParseRange(interp, plot, objc, objv, next, &from, &count) != TCL_OK) {
+        next++;
+        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count) != TCL_OK) {
             return TCL_ERROR;
         }
-        if (RawPlotVectorToObj(interp, rf, plot, varIndex, from, count, &vecObj) != TCL_OK) {
+        if (RawPlotVectorToObj(interp, rf, plot, varIndex, firstPoint, count, &vecObj) != TCL_OK) {
             return TCL_ERROR;
         }
         Tcl_SetObjResult(interp, vecObj);
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "dict") == 0) {
-        RawPlot *plot;
-        Tcl_Size next;
-        Tcl_Size from;
-        Tcl_Size count;
-        Tcl_Obj *dictObj;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (RawParseRange(interp, plot, objc, objv, next, &from, &count) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (RawPlotDictToObj(interp, rf, plot, from, count, &dictObj) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        Tcl_SetObjResult(interp, dictObj);
         return TCL_OK;
     }
     Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw handle subcommand \"%s\"", subcmd));
@@ -3026,7 +3178,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *      On error, releases owned resources and closes the channel.
  *
  * Notes:
- *      Numeric data is not cached at open time; vector and dict subcommands decode it lazily.
+ *      Numeric data is not cached at open time; vector and allvectors subcommands decode it lazily.
  *      ReadHeader() consumes the Binary: or Values: marker and leaves the channel at the data block.
  *      The returned handle command owns the RawFile and releases it through RawFileDeleteProc().
  *      rawHandleCounter is used only to generate unique handle command names.

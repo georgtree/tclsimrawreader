@@ -56,7 +56,7 @@ test testDCBinarySinglePlot-5 {read range of values of all vectors, single plot 
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(in)\
 {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(out) {0.0 0.06666666666666667\
 0.13333333333333333 0.2 0.26666666666666666 0.3333333333333333 0.39999999999999997 0.4666666666666666\
@@ -70,7 +70,7 @@ test testDCBinarySinglePlot-5 {read range of values of all vectors, single plot 
 test testDCBinarySinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999\
 0.9999999999999999 1.0999999999999999 1.2 1.3 1.4000000000000001 1.5000000000000002 1.6000000000000003\
 1.7000000000000004 1.8000000000000005 1.9000000000000006 2.0000000000000004 2.1000000000000005 2.2000000000000006\
@@ -182,7 +182,7 @@ test testDCBinarySinglePlot-13 {read range of values of all vectors, single plot
                                                         -plot option} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
 } -body {
-    return [$r dict -plot 0 -from 0 -count 10]
+    return [$r vectors -plot 0 -all -from 0 -count 10]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(in)\
 {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(out) {0.0 0.06666666666666667\
 0.13333333333333333 0.2 0.26666666666666666 0.3333333333333333 0.39999999999999997 0.4666666666666666\
@@ -197,7 +197,7 @@ test testDCBinarySinglePlot-14 {read values of all vectors, single plot binary r
                                                         option} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
 } -body {
-    return [$r dict -plot 0]
+    return [$r vectors -plot 0 -all ]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999\
 0.9999999999999999 1.0999999999999999 1.2 1.3 1.4000000000000001 1.5000000000000002 1.6000000000000003\
 1.7000000000000004 1.8000000000000005 1.9000000000000006 2.0000000000000004 2.1000000000000005 2.2000000000000006\
@@ -273,6 +273,43 @@ test testDCBinarySinglePlot-17 {read range of values of selected vector, single 
     unset r
 }
 
+test testDCBinarySinglePlot-18 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+} -body {
+    return [$r vectors {v(in) v(out)} -from 0 -count 10]
+} -result {v(in) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(out) {0.0\
+0.06666666666666667 0.13333333333333333 0.2 0.26666666666666666 0.3333333333333333 0.39999999999999997\
+0.4666666666666666 0.5333333333333332 0.6}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCBinarySinglePlot-19 {read values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+} -body {
+    return [$r vectors {v(in) v(out)}]
+} -result {v(in) {0.0 0.1 0.2 0.30000000000000004 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999\
+0.9999999999999999 1.0999999999999999 1.2 1.3 1.4000000000000001 1.5000000000000002 1.6000000000000003\
+1.7000000000000004 1.8000000000000005 1.9000000000000006 2.0000000000000004 2.1000000000000005 2.2000000000000006\
+2.3000000000000007 2.400000000000001 2.500000000000001 2.600000000000001 2.700000000000001 2.800000000000001\
+2.9000000000000012 3.0000000000000013 3.1000000000000014 3.2000000000000015 3.3000000000000016 3.4000000000000017\
+3.5000000000000018 3.600000000000002 3.700000000000002 3.800000000000002 3.900000000000002 4.000000000000002\
+4.100000000000001 4.200000000000001 4.300000000000001 4.4 4.5 4.6 4.699999999999999 4.799999999999999 4.899999999999999\
+4.999999999999998} v(out) {0.0 0.06666666666666667 0.13333333333333333 0.2 0.26666666666666666 0.3333333333333333\
+0.39999999999999997 0.4666666666666666 0.5333333333333332 0.6 0.6666666666666665 0.7333333333333332 0.7999999999999999\
+0.8666666666666667 0.9333333333333335 1.0 1.0666666666666669 1.1333333333333335 1.2000000000000004 1.266666666666667\
+1.3333333333333335 1.4000000000000004 1.466666666666667 1.5333333333333339 1.6000000000000003 1.6666666666666672\
+1.733333333333334 1.8000000000000005 1.8666666666666674 1.933333333333334 2.000000000000001 2.0666666666666678\
+2.133333333333334 2.200000000000001 2.2666666666666675 2.3333333333333344 2.4000000000000012 2.4666666666666677\
+2.5333333333333345 2.6000000000000014 2.666666666666668 2.733333333333334 2.8000000000000007 2.866666666666667\
+2.933333333333333 3.0 3.0666666666666664 3.133333333333333 3.199999999999999 3.2666666666666657 3.333333333333332}}\
+-cleanup {
+    $r close
+    unset r
+}
+
 ### Single plot AC binary
 test testACBinarySinglePlot-1 {read vectors names, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw]]
@@ -339,7 +376,7 @@ test testACBinarySinglePlot-5 {read range of values of all vectors, single plot 
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {{1.0 0.0} {1.2589254117941673 0.0} {1.5848931924611136 0.0} {1.99526231496888 0.0}\
 {2.5118864315095806 0.0} {3.16227766016838 0.0} {3.9810717055349736 0.0} {5.011872336272725 0.0} {6.309573444801935\
 0.0} {7.9432823472428185 0.0}} v(ad) {{1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0}\
@@ -383,7 +420,7 @@ diode)} {{0.00046637537073764246 4.6776000891648055e-9} {0.00046637537073765525 
 test testACBinarySinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {frequency {{1.0 0.0} {1.2589254117941673 0.0} {1.5848931924611136 0.0} {1.99526231496888 0.0}\
 {2.5118864315095806 0.0} {3.16227766016838 0.0} {3.9810717055349736 0.0} {5.011872336272725 0.0} {6.309573444801935\
 0.0} {7.9432823472428185 0.0} {10.000000000000005 0.0} {12.58925411794168 0.0} {15.848931924611145 0.0}\
@@ -595,6 +632,21 @@ plotname {AC Analysis} nvariables 13 npoints 51 dataoffset 454 databytes 10608}}
     unset r
 }
 
+test testACBinarySinglePlot-9 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw]]
+} -body {
+    return [$r vectors {i(vg) v(d)} -from 0 -count 10]
+} -result {i(vg) {{3.557376110964901e-17 1.6148187955174564e-9} {5.638061181292061e-17 2.0329364171197745e-9}\
+{8.935724784909051e-17 2.5593153160738704e-9} {1.416216938130839e-16 3.2219870881994135e-9} {2.2445525842916866e-16\
+4.056241421806933e-9} {3.557376110964887e-16 5.106505402284841e-9} {5.638061181292028e-16 6.428709416400568e-9}\
+{8.935724784908953e-16 8.093265649347086e-9} {1.416216938130816e-15 1.01888177903638e-8} {2.2445525842916267e-15\
+1.282696163242934e-8}} v(d) {{1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0} {1.0 0.0}\
+{1.0 0.0}}} -cleanup {
+    $r close
+    unset r
+}
+
 ### Single plot Tran binary
 test testTranBinarySinglePlot-1 {read vectors names, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran.raw]]
@@ -630,7 +682,7 @@ test testTranBinarySinglePlot-4 {read range of values of all vectors, single plo
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {time {0.0 5.000000000000001e-13 1.0000000000000002e-12 2.0000000000000004e-12 4.000000000000001e-12\
 8.000000000000001e-12 1.6000000000000003e-11 3.2000000000000006e-11 4.36363115246727e-11 5.32321551013049e-11} v(vdd2)\
 {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0} v(vdd) {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0} v(n2) {2.999999997e-9\
@@ -672,6 +724,19 @@ v(n4) {2.999999997e-9 2.9999998052318768e-9 2.9999995283682797e-9 2.999999052757
     unset r
 }
 
+test testTranBinarySinglePlot-5 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran.raw]]
+} -body {
+    return [$r vectors {i(vmeasure) v(osc_out)} -from 0 -count 10]
+} -result {i(vmeasure) {0.002750000048000009 0.0013715711204472236 0.0013681507437144982 0.001361330451116416\
+0.0013477874923874776 0.0013210999268778237 0.001269286987952133 0.0011715998465684592 0.0011052958573555816\
+0.0010534649755347559} v(osc_out) {0.25 0.2568578553609556 0.263698608838201 0.2773391940370545 0.30442511152515944\
+0.3578002426001482 0.4614261205557274 0.6568004035197178 0.789408382078732 0.8930701458221398}} -cleanup {
+    $r close
+    unset r
+}
+
 ### Single plot Noise binary
 test testNoiseBinarySinglePlot-1 {read vectors names, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
@@ -707,13 +772,26 @@ test testNoiseBinarySinglePlot-4 {read range of values of all vectors, single pl
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {0.5 0.6294627058970836 0.7924465962305568 0.99763115748444 1.2559432157547903 1.58113883008419\
 1.9905358527674868 2.5059361681363623 3.1547867224009676 3.9716411736214092} onoise_q1 {1.653154764033754e-6\
 1.4744990273071898e-6 1.3154079133985575e-6 1.1737699373996661e-6 1.0477050278298499e-6 9.355395079588915e-7\
 8.357837884339669e-7 7.471124653478936e-7 6.683465467816801e-7 5.984375555351806e-7} onoise_spectrum\
 {1.6642898251936113e-6 1.4869725383897637e-6 1.3293750136913733e-6 1.1894014521340213e-6 1.0651881400649877e-6\
 9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7 6.285439175321231e-7}} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseBinarySinglePlot-5 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise.raw]]
+} -body {
+    return [$r vectors {frequency onoise_spectrum} -from 0 -count 10]
+} -result {frequency {0.5 0.6294627058970836 0.7924465962305568 0.99763115748444 1.2559432157547903 1.58113883008419\
+1.9905358527674868 2.5059361681363623 3.1547867224009676 3.9716411736214092} onoise_spectrum {1.6642898251936113e-6\
+1.4869725383897637e-6 1.3293750136913733e-6 1.1894014521340213e-6 1.0651881400649877e-6 9.55078069765452e-7\
+8.575980931669651e-7 7.714382569410361e-7 6.954329982019255e-7 6.285439175321231e-7}} -cleanup {
     $r close
     unset r
 }
@@ -784,7 +862,7 @@ test testACBinaryMultiPlot-5 {read range of values of all vectors with default p
                                        file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {{10000.0 0.0} {12640.589312391621 0.0} {15978.449816454928 0.0} {20197.702197846604 0.0}\
 {25531.085853696855 0.0} {32272.797097599338 0.0} {40794.717407289754 0.0} {51566.92688606233 0.0} {65183.63448688396\
 0.0} {82395.95534377472 0.0}} v(1) {{0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0}\
@@ -893,7 +971,7 @@ test testACBinaryMultiPlot-11 {read all vector values from the certain plot in r
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
 } -body {
-    return [$r dict -plot 2 -from 5 -count 16]
+    return [$r vectors -plot 2 -all -from 5 -count 16]
 } -result {frequency {{32272.797097599338 0.0} {40794.717407289754 0.0} {51566.92688606233 0.0} {65183.63448688396 0.0}\
 {82395.95534377472 0.0} {104153.34325028161 0.0} {131655.96375393658 0.0} {166420.89683406294 0.0} {210365.82098792845\
 0.0} {265914.79484724975 0.0} {336131.9713752956 0.0} {424890.6204919688 0.0} {537086.7836326226 0.0} {678909.345701332\
@@ -951,6 +1029,25 @@ valuebytes 16 offsetbytes 96} {index 7 name i(vgain) type current storage comple
     unset r
 }
 
+test testACBinaryMultiPlot-13 {read vectors from the certain plot in range, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
+} -body {
+    return [$r vectors -plot 2 {v(b) i(vgain)} -from 5 -count 16]
+} -result {v(b) {{504.31994997303286 -0.6978130044661658} {504.31937085311 -0.8820757450263776} {504.3184455120634\
+-1.1149936715209663} {504.31696696759064 -1.4094135636176561} {504.31460450071444 -1.7815734302703605}\
+{504.3108296909921 -2.2519968952484897} {504.3047982479205 -2.846622632723611} {504.2951612371752 -3.598229777740287}\
+{504.27976355490944 -4.548235160073621} {504.2551624032816 -5.748955888929808} {504.2158585742536 -7.266450772699293}\
+{504.15306990452183 -9.184074467976803} {504.05277589858997 -11.606894362184663} {503.8926046873217\
+-14.667121112100716} {503.6368877717636 -18.530666044034234} {503.2288317717844 -23.404813705651446}} i(vgain)\
+{{85.36185263523407 -0.11896880679305159} {85.36175390176923 -0.1503834096157945} {85.36159614147797\
+-0.19009314218988677} {85.36134406619443 -0.24028822745140088} {85.36094129203478 -0.3037370525414752}\
+{85.36029772922795 -0.3839386508864848} {85.35926943569316 -0.4853152575126238} {85.35762643322664 -0.6134553245511952}\
+{85.35500130074406 -0.7754199281987474} {85.35080707974815 -0.980128512445015} {85.34410621682026 -1.2388433172657694}\
+{85.33340145141436 -1.565775318631173} {85.31630244597746 -1.978837254245548} {85.28899504722665 -2.5005694653990056}\
+{85.24539817532208 -3.159257855012115} {85.17582919463105 -3.9902419651578995}}} -cleanup {
+    $r close
+    unset r
+}
 
 ### Error handling tests
 test testErrorHandling-1 {wrong command name} -setup {
@@ -996,7 +1093,7 @@ test testErrorHandling-4 {-from option is negative} -setup {
 test testErrorHandling-5 {} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
 } -body {
-    catch {$r dict -plot 10} errorStr
+    catch {$r vectors -plot 10 -all} errorStr
     return $errorStr
 } -result {plot index 10 out of range} -cleanup {
     $r close
@@ -1016,9 +1113,19 @@ test testErrorHandling-6 {} -setup {
 test testErrorHandling-7 {} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot.raw]]
 } -body {
-    catch {$r dict -plot } errorStr
+    catch {$r vectors -all -plot } errorStr
     return $errorStr
 } -result {missing value for option -plot} -cleanup {
+    $r close
+    unset r
+}
+
+test testErrorHandling-6 {} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+} -body {
+    catch {$r vectors {v(out) v(1)} -from 1} errorStr
+    return $errorStr
+} -result {raw vector "v(1)" not found} -cleanup {
     $r close
     unset r
 }
@@ -1071,7 +1178,7 @@ test testDCAsciiSinglePlot-5 {read range of values of all vectors, single plot b
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(in) {0.0 0.1 0.2 0.3\
 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999} v(out) {0.0 0.06666666666666667 0.1333333333333333 0.2\
 0.2666666666666667 0.3333333333333333 0.4 0.4666666666666666 0.5333333333333332 0.6} i(v1) {0.0 -3.333333333333333e-5\
@@ -1084,7 +1191,7 @@ test testDCAsciiSinglePlot-5 {read range of values of all vectors, single plot b
 test testDCAsciiSinglePlot-6 {read values of all vectors, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc_ascii.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {v(v-sweep) {0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999 0.9999999999999999 1.1 1.2\
 1.3 1.4 1.5 1.6 1.7 1.8 1.900000000000001 2.0 2.100000000000001 2.200000000000001 2.300000000000001 2.400000000000001\
 2.500000000000001 2.600000000000001 2.700000000000001 2.800000000000001 2.900000000000001 3.000000000000001\
@@ -1137,6 +1244,42 @@ test testDCAsciiSinglePlot-8 {read and print plot data, single plot binary raw f
     return [$r plots]
 } -result {{index 0 kind values title {voltage divider netlist} plotname {DC transfer characteristic} nvariables 4\
 npoints 51 dataoffset 255 databytes 5089}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiSinglePlot-9 {read all values of selected vectors, single plot binary raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc_ascii.raw]]
+} -body {
+    return [$r vectors {i(v1) v(in)}]
+} -result {i(v1) {0.0 -3.333333333333333e-5 -6.666666666666667e-5 -0.0001 -0.0001333333333333333 -0.0001666666666666667\
+-0.0002 -0.0002333333333333334 -0.0002666666666666667 -0.0003 -0.0003333333333333333 -0.0003666666666666666 -0.0004\
+-0.0004333333333333334 -0.0004666666666666668 -0.0005000000000000002 -0.0005333333333333334 -0.0005666666666666667\
+-0.0006000000000000003 -0.0006333333333333336 -0.000666666666666667 -0.0007000000000000003 -0.0007333333333333334\
+-0.000766666666666667 -0.0008000000000000004 -0.0008333333333333337 -0.0008666666666666671 -0.0009000000000000004\
+-0.000933333333333334 -0.0009666666666666671 -0.001 -0.001033333333333334 -0.001066666666666667 -0.001100000000000001\
+-0.001133333333333334 -0.001166666666666667 -0.001200000000000001 -0.001233333333333334 -0.001266666666666668\
+-0.001300000000000001 -0.001333333333333334 -0.001366666666666668 -0.001400000000000001 -0.001433333333333334\
+-0.001466666666666667 -0.0015 -0.001533333333333334 -0.001566666666666666 -0.0016 -0.001633333333333333\
+-0.001666666666666666} v(in) {0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7 0.7999999999999999 0.8999999999999999 0.9999999999999999\
+1.1 1.2 1.3 1.4 1.5 1.6 1.7 1.8 1.900000000000001 2.0 2.100000000000001 2.200000000000001 2.300000000000001\
+2.400000000000001 2.500000000000001 2.600000000000001 2.700000000000001 2.800000000000001 2.900000000000001\
+3.000000000000001 3.100000000000001 3.200000000000002 3.300000000000002 3.400000000000002 3.500000000000002\
+3.600000000000002 3.700000000000002 3.800000000000002 3.900000000000002 4.000000000000002 4.100000000000001\
+4.200000000000001 4.300000000000001 4.4 4.5 4.6 4.699999999999999 4.799999999999999 4.899999999999999\
+4.999999999999998}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiSinglePlot-10 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc_ascii.raw]]
+} -body {
+    return [$r vectors {i(v1) v(in)} -from 0 -count 10]
+} -result {i(v1) {0.0 -3.333333333333333e-5 -6.666666666666667e-5 -0.0001 -0.0001333333333333333 -0.0001666666666666667\
+-0.0002 -0.0002333333333333334 -0.0002666666666666667 -0.0003} v(in) {0.0 0.1 0.2 0.3 0.4 0.5 0.6 0.7\
+0.7999999999999999 0.8999999999999999}} -cleanup {
     $r close
     unset r
 }
@@ -1207,7 +1350,7 @@ test testACAsciiSinglePlot-5 {read range of values of all vectors, single plot a
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {{1.0 -2.930965534768566e-188} {1.258925411794167 -2.930965534768566e-188} {1.584893192461114\
 -2.930965534768566e-188} {1.99526231496888 -2.930965534768566e-188} {2.511886431509581 -2.930965534768566e-188}\
 {3.16227766016838 -2.930965534768566e-188} {3.981071705534974 -2.930965534768566e-188} {5.011872336272725\
@@ -1253,7 +1396,7 @@ test testACAsciiSinglePlot-5 {read range of values of all vectors, single plot a
 test testACAsciiSinglePlot-6 {read values of all vectors, single plot ascii raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_ascii.raw]]
 } -body {
-    return [$r dict]
+    return [$r vectors -all]
 } -result {frequency {{1.0 -2.930965534768566e-188} {1.258925411794167 -2.930965534768566e-188} {1.584893192461114\
 -2.930965534768566e-188} {1.99526231496888 -2.930965534768566e-188} {2.511886431509581 -2.930965534768566e-188}\
 {3.16227766016838 -2.930965534768566e-188} {3.981071705534974 -2.930965534768566e-188} {5.011872336272725\
@@ -1474,6 +1617,24 @@ plotname {AC Analysis} nvariables 13 npoints 51 dataoffset 481 databytes 30947}}
     unset r
 }
 
+test testACAsciiSinglePlot-9 {read range of values of selected vectors, single plot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_ascii.raw]]
+} -body {
+    return [$r vectors {{v(m1#body diode)} i(vg)} -from 0 -count 10]
+} -result {{v(m1#body diode)} {{0.0004663753707376425 4.677600089164806e-9} {0.0004663753707376552\
+5.888749618460237e-9} {0.0004663753707376756 7.413496538372799e-9} {0.0004663753707377077 9.333039182405611e-9}\
+{0.0004663753707377586 1.174960019600108e-8} {0.0004663753707378395 1.479187026516749e-8} {0.0004663753707379675\
+1.862186136478187e-8} {0.0004663753707381704 2.344353448703191e-8} {0.000466375370738492 2.95136613079974e-8}\
+{0.0004663753707390018 3.715549821572418e-8}} i(vg) {{3.557376110964901e-17 1.614818795517456e-9}\
+{5.638061181292061e-17 2.032936417119774e-9} {8.935724784909051e-17 2.55931531607387e-9} {1.416216938130839e-16\
+3.221987088199414e-9} {2.244552584291687e-16 4.056241421806933e-9} {3.557376110964887e-16 5.106505402284841e-9}\
+{5.638061181292028e-16 6.428709416400568e-9} {8.935724784908953e-16 8.093265649347086e-9} {1.416216938130816e-15\
+1.01888177903638e-8} {2.244552584291627e-15 1.282696163242934e-8}}} -cleanup {
+    $r close
+    unset r
+}
+
 ### Single plot TRAN ascii
 test testTranAsciiSinglePlot-1 {read vectors names, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
@@ -1509,7 +1670,7 @@ test testTranAsciiSinglePlot-4 {read range of values of all vectors, single plot
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {time {0.0 5.000000000000001e-13 1e-12 2e-12 4.000000000000001e-12 8.000000000000001e-12 1.6e-11\
 3.200000000000001e-11 4.36363115246727e-11 5.32321551013049e-11} v(vdd2) {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0}\
 v(vdd) {3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0 3.0} v(n2) {2.999999997e-9 2.999999805231877e-9 2.99999952836828e-9\
@@ -1585,6 +1746,19 @@ dataoffset 590 databytes 4002288}} -cleanup {
     unset r
 }
 
+test testTranAsciiSinglePlot-7 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice tran_ascii.raw]]
+} -body {
+    return [$r vectors {i(vdd) v(osc_out)} -from 0 -count 10]
+} -result {i(vdd) {-0.002750000048000009 -0.001371571120447224 -0.001368150743714498 -0.001361330451116416\
+-0.001347787492387478 -0.001321099926877824 -0.001269286987952133 -0.001171599846568459 -0.001105295857355582\
+-0.001053464975534756} v(osc_out) {0.25 0.2568578553609556 0.263698608838201 0.2773391940370545 0.3044251115251594\
+0.3578002426001482 0.4614261205557274 0.6568004035197178 0.789408382078732 0.8930701458221398}} -cleanup {
+    $r close
+    unset r
+}
+
 ### Single plot Noise ascii
 test testNoiseAsciiSinglePlot-1 {read vectors names, single plot binary raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
@@ -1619,7 +1793,7 @@ test testNoiseAsciiSinglePlot-4 {read range of values of all vectors, single plo
         -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {0.5 0.6294627058970836 0.7924465962305568 0.99763115748444 1.25594321575479 1.58113883008419\
 1.990535852767487 2.505936168136362 3.154786722400968 3.971641173621409} onoise_q1 {1.653154764033754e-6\
 1.47449902730719e-6 1.315407913398558e-6 1.173769937399666e-6 1.04770502782985e-6 9.355395079588915e-7\
@@ -1648,6 +1822,20 @@ test testTranAsciiSinglePlot-6 {read and print plot data, single plot binary raw
     return [$r plots]
 } -result {{index 0 kind values title {a simple bipolar circuit} plotname {Noise Spectral Density Curves} nvariables 3\
 npoints 84 dataoffset 323 databytes 6456}} -cleanup {
+    $r close
+    unset r
+}
+
+test testNoiseAsciiSinglePlot-7 {read range of values of selected vectors, single plot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice noise_ascii.raw]]
+} -body {
+    return [$r vectors {onoise_q1 onoise_spectrum} -from 0 -count 10]
+} -result {onoise_q1 {1.653154764033754e-6 1.47449902730719e-6 1.315407913398558e-6 1.173769937399666e-6\
+1.04770502782985e-6 9.355395079588915e-7 8.357837884339669e-7 7.471124653478936e-7 6.683465467816801e-7\
+5.984375555351806e-7} onoise_spectrum {1.664289825193611e-6 1.486972538389764e-6 1.329375013691373e-6\
+1.189401452134021e-6 1.065188140064988e-6 9.55078069765452e-7 8.575980931669651e-7 7.714382569410361e-7\
+6.954329982019255e-7 6.285439175321231e-7}} -cleanup {
     $r close
     unset r
 }
@@ -1718,7 +1906,7 @@ test testACAsciiMultiPlot-5 {read range of values of all vectors with default pl
                                        file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot_ascii.raw]]
 } -body {
-    return [$r dict -from 0 -count 10]
+    return [$r vectors -all -from 0 -count 10]
 } -result {frequency {{10000.0 0.0} {12640.58931239162 0.0} {15978.44981645493 0.0} {20197.7021978466 0.0}\
 {25531.08585369686 0.0} {32272.79709759934 0.0} {40794.71740728975 0.0} {51566.92688606233 0.0} {65183.63448688396 0.0}\
 {82395.95534377472 0.0}} v(1) {{0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0 0.0} {0.0\
@@ -1825,7 +2013,7 @@ test testACAsciiMultiPlot-10 {read vector from the certain plot in range, multip
 test testACAsciiMultiPlot-11 {read all vector values from the certain plot in range, multiplot ascii raw file} -setup {
     set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot_ascii.raw]]
 } -body {
-    return [$r dict -plot 2 -from 5 -count 16]
+    return [$r vectors -plot 2 -all -from 5 -count 16]
 } -result {frequency {{32272.79709759934 0.0} {40794.71740728975 0.0} {51566.92688606233 0.0} {65183.63448688396 0.0}\
 {82395.95534377472 0.0} {104153.3432502816 0.0} {131655.9637539366 0.0} {166420.8968340629 0.0} {210365.8209879285 0.0}\
 {265914.7948472498 0.0} {336131.9713752956 0.0} {424890.6204919688 0.0} {537086.7836326226 0.0} {678909.345701332 0.0}\
@@ -1877,6 +2065,26 @@ voltage storage complex128 valuebytes 16 offsetbytes 32} {index 3 name v(b) type
 16 offsetbytes 48} {index 4 name v(c) type voltage storage complex128 valuebytes 16 offsetbytes 64} {index 5 name i(l)\
 type current storage complex128 valuebytes 16 offsetbytes 80} {index 6 name i(vce) type current storage complex128\
 valuebytes 16 offsetbytes 96} {index 7 name i(vgain) type current storage complex128 valuebytes 16 offsetbytes 112}}}\
+-cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-13 {read vectors from the certain plot in range, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac_multiplot_ascii.raw]]
+} -body {
+    return [$r vectors -plot 2 {i(vce) i(vgain)} -from 5 -count 16]
+} -result {i(vce) {{-85.36185263523407 0.1189688067930516} {-85.36175390176923 0.1503834096157945} {-85.36159614147797\
+0.1900931421898868} {-85.36134406619443 0.2402882274514009} {-85.36094129203478 0.3037370525414752} {-85.36029772922795\
+0.3839386508864848} {-85.35926943569316 0.4853152575126238} {-85.35762643322664 0.6134553245511952} {-85.35500130074406\
+0.7754199281987474} {-85.35080707974815 0.980128512445015} {-85.34410621682026 1.238843317265769} {-85.33340145141436\
+1.565775318631173} {-85.31630244597746 1.978837254245548} {-85.28899504722665 2.500569465399006} {-85.24539817532208\
+3.159257855012115} {-85.17582919463105 3.9902419651579}} i(vgain) {{85.36185263523407 -0.1189688067930516}\
+{85.36175390176923 -0.1503834096157945} {85.36159614147797 -0.1900931421898868} {85.36134406619443 -0.2402882274514009}\
+{85.36094129203478 -0.3037370525414752} {85.36029772922795 -0.3839386508864848} {85.35926943569316 -0.4853152575126238}\
+{85.35762643322664 -0.6134553245511952} {85.35500130074406 -0.7754199281987474} {85.35080707974815 -0.980128512445015}\
+{85.34410621682026 -1.238843317265769} {85.33340145141436 -1.565775318631173} {85.31630244597746 -1.978837254245548}\
+{85.28899504722665 -2.500569465399006} {85.24539817532208 -3.159257855012115} {85.17582919463105 -3.9902419651579}}}\
 -cleanup {
     $r close
     unset r

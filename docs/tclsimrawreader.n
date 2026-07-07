@@ -1,0 +1,479 @@
+'\"
+'\" '\" Copyright (c) George Yashin
+'\"
+.TH "tclsimrawreader" 3tcl 0\&.1 "tclsimrawreader" "Tcl NgspiceTclBridge package"
+.SH NAME
+Introduction - Tcl NgspiceTclBridge package
+.SH SYNOPSIS
+\fBopenraw\fP \fIfilepath\fP
+.br
+\fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
+.br
+\fBRAWFILE close\fP
+.br
+\fBRAWFILE header\fP \fI?-plot index?\fP
+.br
+\fBRAWFILE names\fP \fI?-plot index?\fP
+.br
+\fBRAWFILE plots\fP
+.br
+\fBRAWFILE vector\fP \fIname ?-plot index? ?-from index? ?-count index?\fP
+.br
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index?\fP
+.br
+.SH "TCLSIMRAWREADER - READ SPICE \&.RAW FILE WITH TCL"
+.PP
+tclsimrawreader is a Tcl C extension that allows to read SPICE3f5 raw-Binary and raw-ASCII files\&.
+It doesn't read the whole file data into memory but read certain vectors lazily by request\&.
+.PP
+It targets Tcl 9\&.0 and works on Linux/macOS/Windows\&.
+.SH "WHAT IT GIVES YOU (AT A GLANCE)"
+.TP
+\(bu
+Reading raw files produced by Ngspice, Xyce and SPICE OPUS
+.TP
+\(bu
+Extension is written in C and allows to read large files without putting it into memory\&.
+.TP
+\(bu
+Supports multi-plot files produced by \&.STEP or loops\&.
+.TP
+\(bu
+Read both binary and ASCII formats\&.
+.TP
+\(bu
+Ability to read only parts of the vector/vectors\&.
+.SH "BUILDING & REQUIREMENTS"
+.PP
+Requirements:
+.TP
+\(bu
+Tcl headers/libs (9\&.0)\&.
+.PP
+To install, run following commands:
+.TP
+\(bu
+git clone https://github\&.com/georgtree/tclsimrawreader\&.git
+.TP
+\(bu
+\&./configure
+.TP
+\(bu
+sudo make install
+.PP
+During installation manpages are also installed\&.
+.PP
+For test package in place run make test\&.
+.PP
+For package uninstall run sudo make uninstall\&.
+.SH DOCUMENTATION
+.PP
+Documentation could be found \fIhere\fP [URL: https://georgtree\&.github\&.io/tclsimrawreader/]\&.
+.SH "QUICK START"
+.PP
+Package loading and initialization:
+.PP
+.RS 4n
+.nf
+package require tclsimrawreader
+
+# Path to raw file
+set rawFilePath /path/to/dc\&.raw
+
+# Open a file by creating handle bound to a Tcl command
+set rawfile [tclsimrawreader::openraw /path/to/ac\&.raw]
+.fi
+.RE
+.PP
+Read the vectors' names:
+.PP
+.RS 4n
+.nf
+$rawfile names
+.fi
+.RE
+.PP
+Get vector data:
+.PP
+.RS 4n
+.nf
+$rawfile vector ID(M1)
+.fi
+.RE
+.PP
+Get multiple vectors' data:
+.PP
+.RS 4n
+.nf
+$rawfile vectors {ID(M1) V(VD)}
+.fi
+.RE
+.PP
+Close file handle
+.PP
+.RS 4n
+.nf
+$rawfile close
+.fi
+.RE
+.SH ::TCLSIMRAWREADER
+.SH COMMANDS
+.PP
+.RS -4n
+\fBopenraw\fR (::tclsimrawreader)
+.RE
+.PP
+Open channel to provided \&.raw file, creates subcommand, parses header(s) information from the file\&.
+Every ::tclsimrawreader::openraw returns a command (e\&.g\&. ::tclsimrawreader::s1)\&. The following
+subcommands operate on that file instance\&.
+.RS 4n
+\fBopenraw\fP \fIfilepath\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+filepath
+Path to SPICE \&.raw file\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+set rawfile [tclsimrawreader::openraw /path/to/ac\&.raw]
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+command name to work with the file, references as RAWFILE later
+.PP
+.RS -4n
+\fBRAWFILE\fR (::tclsimrawreader)
+.RE
+.PP
+A
+command
+ensemble\&.
+.RS 4n
+\fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
+.br
+.RE
+.PP
+\fBDescription\fR
+.PP
+The ensemble supports the following subcommands:
+.RS 4n
+.TP
+\fIclose\fP
+Closes channel to provided \&.raw file and deletes subcommand\&.
+.TP
+\fIheader\fP
+Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot option, returns header from the first plot\&. dictionary\&.
+.TP
+\fInames\fP
+Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names from the first plot\&. list\&.
+.TP
+\fIplots\fP
+Returns list of dictionaries containing information about the plots in the \&.raw file\&. list of dictionaries\&.
+.TP
+\fIvector\fP
+Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values\&.
+.TP
+\fIvectors\fP
+Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values\&.
+.RE
+.PP
+Refer to the documentation of each subcommand for details\&.
+.PP
+.RS -4n
+\fBRAWFILE close\fR (::tclsimrawreader)
+.RE
+.PP
+Closes channel to provided \&.raw file and deletes subcommand\&.
+.RS 4n
+\fBRAWFILE close\fP
+.br
+.RE
+.PP
+\fBDescription\fR
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+$rawfile close
+.fi
+.RE
+.PP
+.RS -4n
+\fBRAWFILE header\fR (::tclsimrawreader)
+.RE
+.PP
+Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot
+option, returns header from the first plot\&.
+dictionary
+.RS 4n
+\fBRAWFILE header\fP \fI?-plot index?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+-plot index
+Index of the plot, optional\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+Result dictionary containing next keys:
+.TP
+\(bu
+title - string from Title: header field
+.TP
+\(bu
+date - string from Date: header field
+.TP
+\(bu
+plotname - string from Plotname: header field
+.TP
+\(bu
+nvariables - string from No\&. Variables: header field
+.TP
+\(bu
+npoints - string from No\&. Points: header field
+.TP
+\(bu
+pointstride - number of bytes occupied by a single point
+.TP
+\(bu
+flags - list of flags from Flags: header field
+.TP
+\(bu
+variables - list of dictionaries containing information from Variables: header block and derived data
+.PP
+Each variable key value contains dictionary with keys:
+.TP
+\(bu
+index - variable index
+.TP
+\(bu
+name - name of the variable
+.TP
+\(bu
+type - type of variable
+.TP
+\(bu
+storage - string characterising the storage of the value for variable, real32 = 4 bytes, real64 = 8 bytes, complex128 = 16 bytes
+.TP
+\(bu
+valuebytes - number of bytes per value
+.TP
+\(bu
+offsetbytes - number of bytes from the start of point memory block to the start of variable value
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+$rawfile header
+$rawfile header -plot 1
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot
+option, returns header from the first plot\&.
+dictionary
+.PP
+.RS -4n
+\fBRAWFILE names\fR (::tclsimrawreader)
+.RE
+.PP
+Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names
+from the first plot\&.
+list
+.RS 4n
+\fBRAWFILE names\fP \fI?-plot index?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+-plot index
+Index of the plot, optional\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+$rawfile names
+$rawfile names -plot 1
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names
+from the first plot\&.
+list
+.PP
+.RS -4n
+\fBRAWFILE plots\fR (::tclsimrawreader)
+.RE
+.PP
+Returns list of dictionaries containing information about the plots in the \&.raw file\&.
+list of dictionaries
+.RS 4n
+\fBRAWFILE plots\fP
+.br
+.RE
+.PP
+\fBDescription\fR
+.PP
+Each dictionary contains next keys:
+.TP
+\(bu
+index - index of the plot, starting with 0
+.TP
+\(bu
+kind - format of the data, either binary or ASCII
+.TP
+\(bu
+title - string from Title: plot's header field
+.TP
+\(bu
+plotname - string from Plotname: plot's header field
+.TP
+\(bu
+nvariables - string from No\&. Variables: plot's header field
+.TP
+\(bu
+npoints - string from No\&. Points: plot's header field
+.TP
+\(bu
+dataoffset - number of bytes immediately after Binary:/Values: marker line for plot
+.TP
+\(bu
+databytes - number of bytes occupied by a data block of the plot
+.PP
+\fBReturn value\fR
+.PP
+Returns list of dictionaries containing information about the plots in the \&.raw file\&.
+list of dictionaries
+.PP
+.RS -4n
+\fBRAWFILE vector\fR (::tclsimrawreader)
+.RE
+.PP
+Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
+index is not provided, return values from the first plot\&.
+list of values
+.RS 4n
+\fBRAWFILE vector\fP \fIname ?-plot index? ?-from index? ?-count index?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+-count index
+Number of values from the number provided by -from, or from the start otherwise, optional, integer\&.
+.TP
+-from index
+Number of the values from the start of the vector, optional, integer\&.
+.TP
+-plot index
+Index of the plot, optional\&.
+.TP
+name
+Name of the vector (variable)
+.RE
+.PP
+\fBDescription\fR
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+$rawfile vector -plot 2 ID(M1)
+$rawfile vector -plot 2 ID(M1) -from 5 -count 16
+$rawfile vector ID(M1) -from 5
+$rawfile vector ID(M1) -count 16
+$rawfile vector ID(M1)
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
+index is not provided, return values from the first plot\&.
+list of values
+.PP
+.RS -4n
+\fBRAWFILE vectors\fR (::tclsimrawreader)
+.RE
+.PP
+Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+if specified\&. If plot index is not provided, return values from the first plot\&.
+list of values
+.RS 4n
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+-all|namesList
+List of vectors' (variables') names, or -all to read all availible vectors\&.
+.TP
+-count index
+Number of values from the number provided by -from, or from the start otherwise, optional, integer\&.
+.TP
+-from index
+Number of the values from the start of the vector, optional, integer\&.
+.TP
+-plot index
+Index of the plot, optional\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+$rawfile vectors -plot 2 {ID(M1) V(VD)}
+$rawfile vectors -plot 2 {ID(M1) V(VD)} -from 5 -count 16
+$rawfile vectors {ID(M1) V(VD)} -from 5
+$rawfile vectors {ID(M1) V(VD)} -count 16
+$rawfile vectors {ID(M1) V(VD)}
+$rawfile vectors -plot 2 -all
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+if specified\&. If plot index is not provided, return values from the first plot\&.
+list of values
+
+
+.SH SEE ALSO
+tclsimrawreader(n) - package's main page
+.br
+.sp 1
+Public commands documentation:
+.br
+tclsimrawreader-tclsimrawreader(n)

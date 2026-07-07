@@ -1,313 +1,134 @@
  
-namespace eval ::ngspicetclbridge {
+namespace eval ::tclsimrawreader {
 
-    proc new {args} {
-        # Load dynamic library, path should be provided in native form for target OS.  Every `::ngspicetclbridge::new`
-        # returns a command (e.g. `::ngspicetclbridge::s1`). The following subcommands operate on that instance.
-        # Optionally the spinit and/or spiceinit initialization files could be forbidden for loading.
-        #  -nospinit - inhibits spinit
-        #  -nospiceinit - inhibits spiceinit
-        #  -noinit - inhibit both spinit and spiceinit
-        #  libpath -  absolute full path to dynamic library
-        # Returns: command name to work with Ngspice instance, references as `SIM` later
+    proc openraw {args} {
+        # Open channel to provided .raw file, creates subcommand, parses header(s) information from the file.
+        # Every `::tclsimrawreader::openraw` returns a command (e.g. `::tclsimrawreader::s1`). The following 
+        # subcommands operate on that file instance.
+        #  filepath - path to SPICE .raw file
+        # Returns: command name to work with the file, references as `RAWFILE` later
         #
         # Example:
         #```tcl
-        # set sim [::ngspicetclbridge::new /usr/local/lib/libngspice.so]
+        # set rawfile [tclsimrawreader::openraw /path/to/ac.raw]
         #```
-        # Synopsis: ?-nospinit|nospiceinit|noinit? libpath
+        # Synopsis: filepath
     }
 }
 
-namespace eval ::ngspicetclbridge::SIM {
-    proc command {string} {
-        # Sends an arbitrary Ngspice command line (e.g., `bg_run`, `circbyline` ..., `.save`, `.tran`, `.dc`). If
-        # we provide `-capture` switch, it returns not only the result code, but also the next message from stdout
-        # of Ngspice. Also, if command is send in the moment background thread is starting or stopping, it will be
-        # deferred to the time is could be safely sent, and in that case `-capture` message and command results code
-        # are not availaible as a return of `command`.
-        #  string -  command string
-        # Returns: Ngspice result code, or dictionary with result code and the message
+namespace eval ::tclsimrawreader::RAWFILE {
+    proc names {args} {
+        # Returns list of vectors' names defined in the header. If provided without `-plot` option, returns names
+        # from the first plot.
+        #  -plot index - index of the plot, optional
+        # Returns: list
         #
         # Example:
         #```tcl
-        # $sim command {circbyline v1 in 0 1}
-        # $sim command bg_run
+        # $rawfile names
+        # $rawfile names -plot 1
         #```
+        # Synopsis: ?-plot index?
     }
 
-    proc circuit {args} {
-        # Sends an circuit to Ngspice in form of the Tcl list, each element is the line of the netlist. If switch 
-        # `-string` is provided, the input netlists could be passed as ordinary string with newline character as a
-        # separator between netlists lines.
-        #  -string - allows to pass circuit as ordinary string
-        #  circuit -  list of string
-        # Returns: Ngspice result code
+    proc header {args} {
+        # Returns dictionary containing metadata from the header for the selected plot. If provided without `-plot`
+        #  option, returns header from the first plot.
+        #  -plot index - index of the plot, optional
+        # Returns: dictionary
+        #
+        # Result dictionary containing next keys:
+        #   - `title` \- string from `Title:` header field
+        #   - `date` \- string from `Date:` header field
+        #   - `plotname` \- string from `Plotname:` header field
+        #   - `nvariables` \- string from `No. Variables:` header field
+        #   - `npoints` \- string from `No. Points:` header field
+        #   - `pointstride` \- number of bytes occupied by a single point
+        #   - `flags` \- list of flags from `Flags:` header field
+        #   - `variables` \- list of dictionaries containing information from `Variables:` header block and derived data
+        #
+        # Each `variable` key value contains dictionary with keys:
+        #   - `index` \- variable index
+        #   - `name` \- name of the variable
+        #   - `type` \- type of variable
+        #   - `storage` \- string characterising the storage of the value for variable, real32 = 4 bytes, real64 = 8
+        #     bytes, complex128 = 16 bytes
+        #   - `valuebytes` \- number of bytes per value
+        #   - `offsetbytes` \- number of bytes from the start of point memory block to the start of variable value
         #
         # Example:
         #```tcl
-        # set resDivCircuit {
-        #     Resistor divider
-        #     v1 in 0 1
-        #     r1 in out 1e3
-        #     r2 out 0 2e3
-        #     .dc v1 0 5 0.1
-        #     .save all
-        #     .end
-        # }
-        # $sim circuit [split $resDivCircuit \n]
-        # $sim command bg_run
+        # $rawfile header
+        # $rawfile header -plot 1
         #```
-        # Synopsis: ?-string? circuit
+        # Synopsis: ?-plot index?
     }
 
-    proc plot {args} {
-        # Returns current plot name if no arguments provided, names of all plots or all vectors names that belongs to
-        # name of the provided plot.
-        #  -all - switch to return all plots names
-        #  -vecs plotname - switch with argument to get all vectors names belonging to `name` plot
-        # Returns: current plot, or list of all plots, or list of all vectors
+    proc plots {} {
+        # Returns list of dictionaries containing information about the plots in the .raw file.
+        # Returns: list of dictionaries
         #
-        # Synopsis: -all
-        # Synopsis: -vecs name
+        # Each dictionary contains next keys:
+        #   - `index` \- index of the plot, starting with 0
+        #   - `kind` \- format of the data, either binary or ASCII
+        #   - `title` \- string from `Title:` plot's header field
+        #   - `plotname` \- string from `Plotname:` plot's header field
+        #   - `nvariables` \- string from `No. Variables:` plot's header field
+        #   - `npoints` \- string from `No. Points:` plot's header field
+        #   - `dataoffset` \- number of bytes immediately after `Binary:`/`Values:` marker line for plot
+        #   - `databytes` \- number of bytes occupied by a data block of the plot
     }
 
-    proc inputpath {args} {
-        # Returns current path for XSPICE code models if `-current` switch is provided, or set current path to value 
-        # provided.
-        #  -current - switch to return current path
-        #  path - full path to desired location
-        # Returns: current path
+    proc vector {args} {
+        # Returns the values of specified vector (variable) for selected plot, in certain range if specified. If plot
+        # index is not provided, return values from the first plot.
+        #  -plot index - index of the plot, optional
+        #  name - name of the vector (variable)
+        #  -from index - number of the values from the start of the vector, optional, integer
+        #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
+        #   integer
+        # Returns: list of values
         #
-        # Synopsis: -current
-        # Synopsis: path
-    }
-
-    proc waitevent {args} {
-        # Blocks until a named event is observed n number of times (or once), the instance is aborted/destroyed, 
-        # or the timeout expires (if provided).
-        #  name -  name of the event
-        #  -n N - number of events that should happend for termination after waiting is started
-        #  timeout_ms -  timeout in miliseconds, optional
-        # Returns: dictionary with information about event
-        #
-        #
-        #ruffopt includedformats nroff
-        #```
-        # ┌───────────────────┬──────────────────────────────┬───────────────────────────────────────────────────────┐
-        # │ Event name        │ Ngspice callback function    │ When it is called                                     │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ send_char         │ SendChar                     │ Whenever Ngspice produces a line of text              │
-        # │                   │                              │ on stdout or stderr.                                  │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ send_stat         │ SendStat                     │ When Ngspice’s simulation status changes              │
-        # │                   │                              │ (e.g., --ready--, tran 50.1%, convergence messages).  │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ controlled_exit   │ ControlledExit               │ When Ngspice exits, either due to an error            │
-        # │                   │                              │ or after a quit command from Tcl/Ngspice.             │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ send_data         │ SendData                     │ During an analysis, whenever Ngspice sends            │
-        # │                   │                              │ a row of vector values (time step or sweep point)     │
-        # │                   │                              │ to the callback.                                      │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ send_init_data    │ SendInitData                 │ At the start of a run, when Ngspice sends metadata    │
-        # │                   │                              │ for all vectors in the current plot                   │
-        # │                   │                              │ (names, types, indexes, real/complex).                │
-        # ├───────────────────┼──────────────────────────────┼───────────────────────────────────────────────────────┤
-        # │ bg_running        │ BGThreadRunning              │ When the Ngspice background thread changes state:     │
-        # │                   │                              │ running=false → it just started running               │
-        # │                   │                              │ running=true  → it has stopped.                       │
-        # └───────────────────┴──────────────────────────────┴───────────────────────────────────────────────────────┘
-        #```
-        #
-        #ruffopt excludedformats nroff
-        # | Event name        | Ngspice callback function name | When it is called                                                                                                                 |
-        # |:------------------|:-------------------------------|:----------------------------------------------------------------------------------------------------------------------------------|
-        # | `send_char`       | `SendChar`                     | Whenever Ngspice produces a line of text on stdout or stderr.                                                                     |
-        # | `send_stat`       | `SendStat`                     | When Ngspice’s simulation status changes (e.g., --ready--, tran 50.1%, convergence messages).                                     |
-        # | `controlled_exit` | `ControlledExit`               | When Ngspice exits, either due to an error or after a quit command from Tcl/Ngspice.                                              |
-        # | `send_data`       | `SendData`                     | During an analysis, whenever Ngspice sends a row of vector values (time step or sweep point) to the callback.                     |
-        # | `send_init_data`  | `SendInitData`                 | At the start of a run, when Ngspice sends metadata for all vectors in the current plot (names, types, indexes, real/complex).     |
-        # | `bg_running`      | `BGThreadRunning`              | When the Ngspice background thread changes state: running=false means it just started running, running=true means it has stopped. |
-        #
-        #
-        #
-        #ruffopt includedformats nroff
-        #```
-        # ┌─────┬─────────────────────────┬─────────────────────────────┬─────────────────────────┬─────────────────────┐
-        # │ Time│ Tcl Script Action       │ Ngspice Core Activity       │ Bridge Callback Fired   │ Tcl Event Name Seen │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t0  │ set s [..::new ..]      │ Library loaded              │ (none)                  │ (none)              │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t1  │ $s init                 │ Initialization completed    │ (none)                  │ (none)              │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t2  │ cirPass …               │ Parses circuit line         │ send_char("...")        │ send_char           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t3  │ (more circbyline calls) │ Parses circuit line         │ send_char("...")        │ send_char           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t4  │ $s command bg_run       │ Start background simulation │ bg_running(false)       │ bg_running          │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t5  │ (analysis setup)        │ Build vector table          │ send_init_data()        │ send_init_data      │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t6  │ (analysis running)      │ First data point            │ send_data(...)          │ send_data           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t7  │ (analysis running)      │ More points                 │ send_data(...)          │ send_data           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t8  │ (analysis running)      │ Status change               │ send_stat("...")        │ send_stat           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t9  │ (analysis completed)    │ Simulation ready            │ send_stat("--ready--")  │ send_stat           │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t10 │ (BG thread exits)       │ Background thread exits     │ bg_running(true)        │ bg_running          │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t11 │ $s command quit         │ ngspice quits               │ controlled_exit(...)    │ controlled_exit     │
-        # ├─────┼─────────────────────────┼─────────────────────────────┼─────────────────────────┼─────────────────────┤
-        # │ t12 │ $s destroy              │ Teardown                    │ (no further calls)      │ (command removed)   │
-        # └─────┴─────────────────────────┴─────────────────────────────┴─────────────────────────┴─────────────────────┘
-        #```
-        #
-        #ruffopt excludedformats nroff
-        # | Time | Tcl Script Action         | Ngspice Core Activity       | Bridge Callback Fired    | Tcl Event Name Seen |
-        # |------|---------------------------|-----------------------------|--------------------------|---------------------|
-        # | t0   | `set s [..::new ..]`      | Library loaded              | *(none)*                 | *(none)*            |
-        # | t1   | `$s init`                 | Initialization completed    | *(none)*                 | *(none)*            |
-        # | t2   | `cirPass …`               | Parses circuit line         | `send_char("...")`       | `send_char`         |
-        # | t3   | *(more circbyline calls)* | Parses circuit line         | `send_char("...")`       | `send_char`         |
-        # | t4   | `$s command bg_run`       | Start background simulation | `bg_running(false)`      | `bg_running`        |
-        # | t5   | *(analysis setup)*        | Build vector table          | `send_init_data()`       | `send_init_data`    |
-        # | t6   | *(analysis running)*      | First data point            | `send_data(...)`         | `send_data`         |
-        # | t7   | *(analysis running)*      | More points                 | `send_data(...)`         | `send_data`         |
-        # | t8   | *(analysis running)*      | Status change               | `send_stat("...")`       | `send_stat`         |
-        # | t9   | *(analysis completed)*    | Simulation ready            | `send_stat("--ready--")` | `send_stat`         |
-        # | t10  | *(BG thread exits)*       | Background thread exits     | `bg_running(true)`       | `bg_running`        |
-        # | t11  | `$s command quit`         | ngspice quits               | `controlled_exit(...)`   | `controlled_exit`   |
-        # | t12  | `$s destroy`              | Teardown                    | *(no further calls)*     | *(command removed)* |
-        #
-        # Result dictionary of the command:
-        #   - `fired` \- `0|1`, whether the event occurred during this wait
-        #   - `count` \- cumulative total count for that event so far
-        #   - `status` \- `ok | timeout | aborted`
-        #
-        # Examples:
+        # Example:
         #```tcl
-        # $sim waitevent send_stat 1000
-        # # -> {fired 1 count 1 status ok}
-        # 
-        # $sim waitevent send_stat 1000
-        # # -> {fired 0 count 1 status timeout}  ;# nothing new in the next 1s
+        # $rawfile vector -plot 2 ID(M1) 
+        # $rawfile vector -plot 2 ID(M1) -from 5 -count 16
+        # $rawfile vector ID(M1) -from 5
+        # $rawfile vector ID(M1) -count 16
+        # $rawfile vector ID(M1)
         #```
-        #
-        # If you want “fresh” waits, you can clear counts with `eventcounts -clear`.
-        #
-        # Synopsis: name ?-n N? ?timeout_ms?
+        # Synopsis: name ?-plot index? ?-from index? ?-count index?
     }
 
     proc vectors {args} {
-        # Returns held **synchronously accumulated** vector values (built from `send_data` events) in a dict.
-        #  -clear - empties the internal memory structure and returns **nothing**.
-        # Returns: dict with vectors values accumulated up to this point in internal structure
+        # Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+        # if specified. If plot index is not provided, return values from the first plot.
+        #  -plot index - index of the plot, optional
+        #  -all|namesList - list of vectors' (variables') names, or `-all` to read all availible vectors
+        #  -from index - number of the values from the start of the vector, optional, integer
+        #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
+        #   integer
+        # Returns: list of values
         #
         # Example:
         #```tcl
-        # $sim vectors
-        # # -> v(out) {0.0 0.1 0.2 ...} v(in) {...} v-sweep {...}
-        #
-        # $sim vectors -clear
-        # # -> (no result; succeeds)
+        # $rawfile vectors -plot 2 {ID(M1) V(VD)} 
+        # $rawfile vectors -plot 2 {ID(M1) V(VD)} -from 5 -count 16
+        # $rawfile vectors {ID(M1) V(VD)} -from 5
+        # $rawfile vectors {ID(M1) V(VD)} -count 16
+        # $rawfile vectors {ID(M1) V(VD)}
+        # $rawfile vectors -plot 2 -all 
         #```
-        #
-        # Synopsis: ?-clear?
+        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index?
     }
 
-    proc initvectors {args} {
-        # Returns held **initial vector metadata** (built from send_init_data) in a dict.
-        #  -clear - empties the internal memory structure and returns **nothing**.
-        # Returns: dict with initial vector metadata saved in internal structure
+    proc close {} {
+        # Closes channel to provided .raw file and deletes subcommand.
         #
         # Example:
         #```tcl
-        # $sim initvectors
-        # # -> out {number 1 real 1} in {number 2 real 1} v-sweep {number 3 real 1}
+        # $rawfile close
         #```
-        #
-        # **Warning**: accumulation of data **do not** continues after call `bg_run`, new metadata replace the old one
-        # in the storage.
-        #
-        # Synopsis: ?-clear?
-    }
-
-    proc asyncvector {name} {
-        # Fetches the current values of a named vector on demand via ngspice `ngGet_Vec_Info`. Works after the
-        # simulation has produced any data (not necessarily the complete vector). By addding `-info` switch, vector
-        # metadata is provided, i.e. type of the vector (current, voltage, time, etc), type of the numbers (complex or
-        # real), and length of the vector.
-        #  -info - if this switch is provided, commands return dictionary with vector metadata
-        #  name - name of the vector
-        # Returns: real vectors as a flat list of doubles, complex vectors as a list of `{re im}` pairs. Error if vector
-        # does not exists.
-        #
-        # Example:
-        #```tcl
-        # $sim initvectors
-        # $sim asyncvector out
-        # # -> {0.0 0.066666... 0.133333... ...}
-        # 
-        # $sim asyncvector V(9)
-        # # -> {{0.01 0.00} {0.02 0.00} ...}   ;# if complex
-        #```
-        #
-        # Synopsis: ?-info? name
-    }
-
-    proc messages {args} {
-        # Queues of textual messages captured from Ngspice (stdout/stderr) and bridge status lines.
-        #  -clear - empties the internal queue structure and returns **nothing**.
-        # Returns: list of messages
-        #
-        # Example:
-        #```tcl
-        # join [$sim messages] \n
-        # # stdout ******
-        # # stdout ** ngspice-44.x shared library
-        # # ...
-        # # # status[0]: --ready--
-        #```
-        #
-        # **Warning**: accumulation of messages continues even if you run new circuit or analysis until you explicitly
-        # clear the data storage.
-        #
-        # Synopsis: ?-clear?
-    }
-
-    proc eventcounts {args} {
-        # Gets or reset the cumulative event counters for this simulator instance.
-        #  -clear - zeros all counts and returns nothing.
-        # Returns: returns a dict with keys as events names, and counts for each event as a value
-        #
-        # Example:
-        #```tcl
-        # $sim eventcounts
-        # # -> send_char N  send_stat N  controlled_exit N send_data N  send_init_data N  bg_running N
-        #```
-        #
-        # Synopsis: ?-clear?
-    }
-
-    proc abort {} {
-        # Sets an internal abort flag and wake any waiters (useful to force waitevent to return). This does **not** free
-        # the instance.
-    }
-
-    proc isrunning {} {
-        # Calls asynchronously to check if background thread is running.
-        # Returns: `1` if thread is running, `0` otherwise.
-    }
-
-    proc destroy {} {
-        # Deletes the instance command. In details:
-        # - Marks the context as destroying
-        # - Wakes any waiters
-        # - Quiesces the ngspice background thread
-        # - Defers and performs full cleanup
     }
 
     namespace export *

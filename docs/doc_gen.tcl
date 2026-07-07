@@ -4,7 +4,7 @@ package require fileutil
 set docDir [file dirname [file normalize [info script]]]
 set sourceDir [file join $docDir ..]
 source [file join $docDir startPage.ruff]
-source [file join $sourceDir tclsimrawreader.tcl]
+source [file join $docDir tclsimrawreader.ruff]
 
 set packageVersion [package versions tclsimrawreader]
 puts $packageVersion
@@ -15,7 +15,7 @@ set commonSphinx [list -title $title -sortnamespaces false -preamble $startPage 
                     -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                     -copyright "George Yashin" {*}$::argv]
 set commonNroff [list -title $title -sortnamespaces false -preamble $startPage -pagesplit namespace -recurse false\
-                         -pagesplit namespace -autopunctuate true -compact false -includeprivate false\
+                         -pagesplit none -autopunctuate true -compact false -includeprivate false\
                          -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                          -copyright "George Yashin" {*}$::argv]
 

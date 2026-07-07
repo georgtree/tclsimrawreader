@@ -59,6 +59,11 @@ typedef enum RawValueStorage {
     RAW_VALUE_COMPLEX128 /* double real + double imag, 16 bytes */
 } RawValueStorage;
 
+typedef enum RawVectorResultMode {
+    RAW_VECTOR_RESULT_LIST,
+    RAW_VECTOR_RESULT_DICT
+} RawVectorResultMode;
+
 typedef struct RawVariable {
     /*------------------------------------------------------------------------------------------------------------------
      * Variable identity from the raw-file Variables section
@@ -207,18 +212,23 @@ static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSto
 static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
                                 Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs);
 static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawPlot *plot);
-static int RawPlotAsciiVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
-                                   Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr);
-static int RawPlotAsciiDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                                 Tcl_Obj **objPtr);
-static int RawPlotBinaryVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
-                                    Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr);
-static int RawPlotBinaryDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                                  Tcl_Obj **objPtr);
+static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr);
+static int RawPlotResolveAllVariables(Tcl_Interp *interp, RawPlot *plot, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr);
+static int RawPlotBinaryReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                         Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                         RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static int RawPlotAsciiReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                        Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                        RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static int RawPlotReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                   Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                   RawVectorResultMode resultMode, Tcl_Obj **objPtr);
 static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
                               Tcl_Size count, Tcl_Obj **objPtr);
-static int RawPlotDictToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size firstPoint, Tcl_Size count,
-                            Tcl_Obj **objPtr);
+static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
+                              Tcl_Size count, Tcl_Obj **objPtr);
 static const char *RawDataKindName(DataKind kind);
 static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index);
 
