@@ -45,7 +45,7 @@ package require tclsimrawreader
 set rawFilePath /path/to/dc.raw
 
 # Open a file by creating handle bounded to a Tcl command
-set rawfile [tclsimrawreader::openraw /path/to/ac.raw]
+set rawfile [tclsimrawreader::openraw $rawFilePath]
 ```
 
 Read the vectors' names:

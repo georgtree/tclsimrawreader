@@ -84,7 +84,7 @@ It doesn’t read the whole file data into memory but read certain vectors lazil
 <span class="k">set</span><span class="w"> </span>rawFilePath<span class="w"> </span><span class="o">/</span>path<span class="o">/</span>to<span class="o">/</span>dc.raw
 
 <span class="c"># Open a file by creating handle bound to a Tcl command</span>
-<span class="k">set</span><span class="w"> </span>rawfile<span class="w"> </span><span class="k">[</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="o">/</span>path<span class="o">/</span>to<span class="o">/</span>ac.raw<span class="k">]</span>
+<span class="k">set</span><span class="w"> </span>rawfile<span class="w"> </span><span class="k">[</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="nv">$rawFilePath</span><span class="k">]</span>
 </pre></div>
 </div>
 <p>Read the vectors’ names:</p>
