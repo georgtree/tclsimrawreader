@@ -34,6 +34,7 @@ static const char *types[] = {"time",
                               "res-sweep",
                               "phase",
                               "decibel",
+                              "device_current",
                               NULL};
 
 typedef enum { ENC_KIND_UTF8, ENC_KIND_UTF16LE } EncKind;
@@ -50,7 +51,8 @@ typedef enum {
     RAW_FLAG_REAL = 1u << 0,
     RAW_FLAG_DOUBLE = 1u << 1,
     RAW_FLAG_COMPLEX = 1u << 2,
-    RAW_FLAG_STEPPED = 1u << 3
+    RAW_FLAG_STEPPED = 1u << 3,
+    RAW_FLAG_FASTACCESS = 1u << 4
 } RawFlag;
 
 typedef enum RawValueStorage {
@@ -59,10 +61,9 @@ typedef enum RawValueStorage {
     RAW_VALUE_COMPLEX128 /* double real + double imag, 16 bytes */
 } RawValueStorage;
 
-typedef enum RawVectorResultMode {
-    RAW_VECTOR_RESULT_LIST,
-    RAW_VECTOR_RESULT_DICT
-} RawVectorResultMode;
+typedef enum RawVectorResultMode { RAW_VECTOR_RESULT_LIST, RAW_VECTOR_RESULT_DICT } RawVectorResultMode;
+
+typedef enum RawDialect { RAW_DIALECT_GENERIC, RAW_DIALECT_LTSPICE } RawDialect;
 
 typedef struct RawVariable {
     /*------------------------------------------------------------------------------------------------------------------
@@ -156,6 +157,7 @@ typedef struct RawFile {
      * Open channel and header/data text decoding
      *-----------------------------------------------------------------------------------------------------------------*/
     Tcl_Channel chan; /* Open raw-file channel, kept for lazy vector/dict reads */
+    RawDialect dialect;
     EncKind encKind;  /* Detected raw header/text encoding kind */
     Tcl_Encoding enc; /* Tcl encoding handle for decoded text, or NULL when not needed */
 
@@ -190,8 +192,14 @@ static const char *SkipToken(const char *p);
 static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *v);
 static int ReadVariablesSection(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h);
 static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h);
-static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h);
+static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h, RawDialect dialect, int ltspiceAllDouble);
+static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src);
 static int ComputeBinaryByteCount(Tcl_Interp *interp, const RawHeader *h, Tcl_Size *nbytesPtr);
+static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr);
+static int RawLtspicePrepareBinaryPlot(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot,
+                                       Tcl_Size *declaredPointsPtr);
+static int RawLtspiceAppendSplitBinaryPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                            Tcl_Size declaredPoints);
 static RawHeaderStatus ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
                                   DataKind *dataKindPtr);
 static Tcl_Obj *RawHeaderToDictObj(const RawHeader *h);
@@ -227,13 +235,13 @@ static int RawPlotReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plo
                                    RawVectorResultMode resultMode, Tcl_Obj **objPtr);
 static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
                               Tcl_Size count, Tcl_Obj **objPtr);
-static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
-                              Tcl_Size count, Tcl_Obj **objPtr);
 static const char *RawDataKindName(DataKind kind);
 static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index);
 
 //*** Tcl command registering/processing function
 static void RawFileDeleteProc(void *clientData);
+static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
+                            Tcl_Obj **fileNameObjPtr);
 static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
 static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
                          Tcl_Size *fromPtr, Tcl_Size *countPtr);

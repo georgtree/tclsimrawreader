@@ -605,6 +605,8 @@ static int AppendFlag(Tcl_Interp *interp, RawHeader *h, const char *start, Tcl_S
         h->flagsMask |= RAW_FLAG_COMPLEX;
     } else if (len == 7 && strncmp(start, "stepped", 7) == 0) {
         h->flagsMask |= RAW_FLAG_STEPPED;
+    } else if (len == 10 && strncmp(start, "FastAccess", 10) == 0) {
+        h->flagsMask |= RAW_FLAG_FASTACCESS;
     }
     return TCL_OK;
 }
@@ -1016,27 +1018,88 @@ static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h) {
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h) {
+static int RawSetVariableLayout(Tcl_Interp *interp, RawHeader *h, Tcl_Size index, RawValueStorage storage,
+                                Tcl_Size valueBytes, Tcl_Size *offsetPtr) {
+    RawVariable *v = &h->variables[index];
+    v->storage = storage;
+    v->valueBytes = valueBytes;
+    v->offsetBytes = *offsetPtr;
+    if (valueBytes > TCL_SIZE_MAX - *offsetPtr) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw point stride overflow", -1));
+        return TCL_ERROR;
+    }
+    *offsetPtr += valueBytes;
+    return TCL_OK;
+}
+
+static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h, RawDialect dialect, int ltspiceAllDouble) {
     Tcl_Size offset = 0;
+    if (h->numVariables < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("negative variable count", -1));
+        return TCL_ERROR;
+    }
+    if (dialect == RAW_DIALECT_LTSPICE) {
+        if (h->flagsMask & RAW_FLAG_FASTACCESS) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
+            return TCL_ERROR;
+        }
+        if (h->flagsMask & RAW_FLAG_COMPLEX) {
+            h->defaultStorage = RAW_VALUE_COMPLEX128;
+            h->defaultValueBytes = 16;
+
+            for (Tcl_Size i = 0; i < h->numVariables; i++) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_COMPLEX128, 16, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+            h->pointStrideBytes = offset;
+            return TCL_OK;
+        }
+        if (ltspiceAllDouble) {
+            h->defaultStorage = RAW_VALUE_REAL64;
+            h->defaultValueBytes = 8;
+            for (Tcl_Size i = 0; i < h->numVariables; i++) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+            h->pointStrideBytes = offset;
+            return TCL_OK;
+        }
+        /*
+         * LTspice normal binary real layout:
+         *
+         *     variable 0: double
+         *     variables 1..N: float
+         *
+         * This covers transient time + traces and sweep axis + traces.
+         */
+        h->defaultStorage = RAW_VALUE_REAL32;
+        h->defaultValueBytes = 4;
+        for (Tcl_Size i = 0; i < h->numVariables; i++) {
+            if (i == 0) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            } else {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL32, 4, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+        }
+        h->pointStrideBytes = offset;
+        return TCL_OK;
+    }
+    /*
+     * Generic/ngspice/Xyce layout.
+     */
     if (ResolveDefaultStorage(interp, h) != TCL_OK) {
         return TCL_ERROR;
     }
     for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        RawVariable *v = &h->variables[i];
-        /*
-           Default case: every variable uses the storage implied by Flags:.
-        */
-        v->storage = h->defaultStorage;
-        v->valueBytes = h->defaultValueBytes;
-        /*
-           Dialect-specific exceptions can go here.
-        */
-        v->offsetBytes = offset;
-        if (v->valueBytes > TCL_SIZE_MAX - offset) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw point stride overflow", -1));
+        if (RawSetVariableLayout(interp, h, i, h->defaultStorage, h->defaultValueBytes, &offset) != TCL_OK) {
             return TCL_ERROR;
         }
-        offset += v->valueBytes;
     }
     h->pointStrideBytes = offset;
     return TCL_OK;
@@ -1153,19 +1216,11 @@ static RawHeaderStatus ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind 
         }
         sawAnyLine = 1;
         if (strcmp(line, "Binary:") == 0) {
-            if (RawHeaderResolveVariableLayout(interp, h) != TCL_OK) {
-                Tcl_DStringFree(&utfLine);
-                return RAW_HEADER_ERROR;
-            }
             *dataKindPtr = DATA_BINARY;
             Tcl_DStringFree(&utfLine);
             return RAW_HEADER_OK;
         }
         if (strcmp(line, "Values:") == 0) {
-            if (RawHeaderResolveVariableLayout(interp, h) != TCL_OK) {
-                Tcl_DStringFree(&utfLine);
-                return RAW_HEADER_ERROR;
-            }
             *dataKindPtr = DATA_VALUES;
             Tcl_DStringFree(&utfLine);
             return RAW_HEADER_OK;
@@ -1460,6 +1515,489 @@ static void RawFreeVectorObjects(Tcl_Obj **vecObjs, Tcl_Size numVars) {
         }
     }
     Tcl_Free((char *)vecObjs);
+}
+
+static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src) {
+    RawHeaderInit(dst);
+    dst->flagsMask = src->flagsMask;
+    dst->numVariables = src->numVariables;
+    dst->numPoints = src->numPoints;
+    dst->haveNumVariables = src->haveNumVariables;
+    dst->haveNumPoints = src->haveNumPoints;
+    dst->defaultStorage = src->defaultStorage;
+    dst->defaultValueBytes = src->defaultValueBytes;
+    dst->pointStrideBytes = src->pointStrideBytes;
+    if (src->title) {
+        dst->title = StrDupLen(src->title, (Tcl_Size)strlen(src->title));
+    }
+    if (src->date) {
+        dst->date = StrDupLen(src->date, (Tcl_Size)strlen(src->date));
+    }
+    if (src->plotname) {
+        dst->plotname = StrDupLen(src->plotname, (Tcl_Size)strlen(src->plotname));
+    }
+    dst->numFlags = src->numFlags;
+    if (src->numFlags > 0) {
+        if ((size_t)src->numFlags > SIZE_MAX / sizeof(char *)) {
+            RawHeaderFree(dst);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw flag array clone overflow", -1));
+            return TCL_ERROR;
+        }
+        dst->flags = (char **)Tcl_Alloc(sizeof(char *) * (size_t)src->numFlags);
+        memset(dst->flags, 0, sizeof(char *) * (size_t)src->numFlags);
+        for (Tcl_Size i = 0; i < src->numFlags; i++) {
+            if (src->flags[i]) {
+                dst->flags[i] = StrDupLen(src->flags[i], (Tcl_Size)strlen(src->flags[i]));
+            }
+        }
+    }
+    if (src->numVariables > 0) {
+        if ((size_t)src->numVariables > SIZE_MAX / sizeof(RawVariable)) {
+            RawHeaderFree(dst);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw variable array clone overflow", -1));
+            return TCL_ERROR;
+        }
+        dst->variables = (RawVariable *)Tcl_Alloc(sizeof(RawVariable) * (size_t)src->numVariables);
+        memset(dst->variables, 0, sizeof(RawVariable) * (size_t)src->numVariables);
+        for (Tcl_Size i = 0; i < src->numVariables; i++) {
+            const RawVariable *sv = &src->variables[i];
+            RawVariable *dv = &dst->variables[i];
+            dv->index = sv->index;
+            dv->storage = sv->storage;
+            dv->valueBytes = sv->valueBytes;
+            dv->offsetBytes = sv->offsetBytes;
+            if (sv->name) {
+                dv->name = StrDupLen(sv->name, (Tcl_Size)strlen(sv->name));
+            }
+            if (sv->type) {
+                dv->type = StrDupLen(sv->type, (Tcl_Size)strlen(sv->type));
+            }
+        }
+    }
+    return TCL_OK;
+}
+
+static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr) {
+    Tcl_WideInt oldPos;
+    Tcl_WideInt endPos;
+    oldPos = Tcl_Tell(chan);
+    if (oldPos < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get current raw-file offset", -1));
+        return TCL_ERROR;
+    }
+    if (Tcl_Seek(chan, 0, SEEK_END) < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to end of raw file", -1));
+        return TCL_ERROR;
+    }
+    endPos = Tcl_Tell(chan);
+    if (endPos < 0) {
+        Tcl_Seek(chan, oldPos, SEEK_SET);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get raw-file size", -1));
+        return TCL_ERROR;
+    }
+    if (Tcl_Seek(chan, oldPos, SEEK_SET) < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to restore raw-file offset", -1));
+        return TCL_ERROR;
+    }
+    *sizePtr = endPos;
+    return TCL_OK;
+}
+
+static int RawMulSize(Tcl_Interp *interp, Tcl_Size a, Tcl_Size b, const char *message, Tcl_Size *outPtr) {
+    if (a < 0 || b < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
+        return TCL_ERROR;
+    }
+    if (a != 0 && b > TCL_SIZE_MAX / a) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
+        return TCL_ERROR;
+    }
+    *outPtr = a * b;
+    return TCL_OK;
+}
+
+static int RawLtspiceCandidateStrides(Tcl_Interp *interp, RawHeader *h, Tcl_Size *mixedStridePtr,
+                                      Tcl_Size *doubleStridePtr) {
+    Tcl_Size mixedStride;
+    Tcl_Size doubleStride;
+    if (h->numVariables <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw file has no variables", -1));
+        return TCL_ERROR;
+    }
+    if (h->flagsMask & RAW_FLAG_COMPLEX) {
+        if (RawMulSize(interp, h->numVariables, 16, "LTspice complex point stride overflow", doubleStridePtr) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        *mixedStridePtr = *doubleStridePtr;
+        return TCL_OK;
+    }
+    if (h->numVariables == 1) {
+        mixedStride = 8;
+    } else {
+        Tcl_Size tailBytes;
+        if (RawMulSize(interp, h->numVariables - 1, 4, "LTspice mixed point stride overflow", &tailBytes) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (tailBytes > TCL_SIZE_MAX - 8) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice mixed point stride overflow", -1));
+            return TCL_ERROR;
+        }
+        mixedStride = 8 + tailBytes;
+    }
+    if (RawMulSize(interp, h->numVariables, 8, "LTspice double point stride overflow", &doubleStride) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    *mixedStridePtr = mixedStride;
+    *doubleStridePtr = doubleStride;
+    return TCL_OK;
+}
+
+static int RawLtspiceDetectAllDouble(Tcl_Interp *interp, RawHeader *h, Tcl_Size physicalDataBytes, int *allDoublePtr) {
+    Tcl_Size mixedStride;
+    Tcl_Size doubleStride;
+    Tcl_Size mixedBytes;
+    Tcl_Size doubleBytes;
+    if (h->flagsMask & RAW_FLAG_COMPLEX) {
+        *allDoublePtr = 1;
+        return TCL_OK;
+    }
+    if (RawLtspiceCandidateStrides(interp, h, &mixedStride, &doubleStride) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (h->haveNumPoints && h->numPoints > 0) {
+        if (RawMulSize(interp, h->numPoints, mixedStride, "LTspice mixed data byte count overflow", &mixedBytes) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (RawMulSize(interp, h->numPoints, doubleStride, "LTspice double data byte count overflow", &doubleBytes) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (physicalDataBytes == mixedBytes) {
+            *allDoublePtr = 0;
+            return TCL_OK;
+        }
+        if (physicalDataBytes == doubleBytes) {
+            *allDoublePtr = 1;
+            return TCL_OK;
+        }
+        /*
+         * Some LTspice stepped real/sweep files use No. Points as the per-step count.
+         * In that case the physical data size is an integer multiple of one step.
+         */
+        if ((h->flagsMask & RAW_FLAG_STEPPED) && mixedBytes > 0 && physicalDataBytes % mixedBytes == 0) {
+            *allDoublePtr = 0;
+            return TCL_OK;
+        }
+        if ((h->flagsMask & RAW_FLAG_STEPPED) && doubleBytes > 0 && physicalDataBytes % doubleBytes == 0) {
+            *allDoublePtr = 1;
+            return TCL_OK;
+        }
+    }
+    /*
+     * Last-resort inference. Prefer mixed because it is LTspice's default real-data binary layout.
+     */
+    if (mixedStride > 0 && physicalDataBytes % mixedStride == 0) {
+        *allDoublePtr = 0;
+        return TCL_OK;
+    }
+    if (doubleStride > 0 && physicalDataBytes % doubleStride == 0) {
+        *allDoublePtr = 1;
+        return TCL_OK;
+    }
+    Tcl_SetObjResult(interp,
+                     Tcl_NewStringObj("LTspice binary data size does not match known mixed or double layout", -1));
+    return TCL_ERROR;
+}
+
+static int RawLtspicePrepareBinaryPlot(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot,
+                                       Tcl_Size *declaredPointsPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_WideInt fileSize;
+    Tcl_WideInt physicalWide;
+    Tcl_Size physicalDataBytes;
+    Tcl_Size physicalPoints;
+    int allDouble;
+    if (h->flagsMask & RAW_FLAG_FASTACCESS) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
+        return TCL_ERROR;
+    }
+    if (RawGetChannelSize(interp, chan, &fileSize) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (fileSize < plot->dataOffset) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice raw data offset", -1));
+        return TCL_ERROR;
+    }
+    physicalWide = fileSize - plot->dataOffset;
+    if ((Tcl_WideInt)(Tcl_Size)physicalWide != physicalWide) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw data byte count overflow", -1));
+        return TCL_ERROR;
+    }
+    physicalDataBytes = (Tcl_Size)physicalWide;
+    if (RawLtspiceDetectAllDouble(interp, h, physicalDataBytes, &allDouble) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (RawHeaderResolveVariableLayout(interp, h, RAW_DIALECT_LTSPICE, allDouble) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (h->pointStrideBytes <= 0 || physicalDataBytes % h->pointStrideBytes != 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice binary data is not an integer number of points", -1));
+        return TCL_ERROR;
+    }
+    physicalPoints = physicalDataBytes / h->pointStrideBytes;
+    *declaredPointsPtr = h->haveNumPoints ? h->numPoints : physicalPoints;
+    /*
+     * For LTspice, use the physical point count in the base plot. Stepped files may later
+     * be split into pseudo-plots with smaller per-step point counts.
+     */
+    h->numPoints = physicalPoints;
+    h->haveNumPoints = 1;
+    plot->dataBytes = physicalDataBytes;
+    plot->nextOffset = fileSize;
+    return TCL_OK;
+}
+
+static double RawDecodeBinaryAxisValue(const unsigned char *pointPtr, RawHeader *h) {
+    RawVariable *axis = &h->variables[0];
+    const unsigned char *p = pointPtr + axis->offsetBytes;
+    switch (axis->storage) {
+    case RAW_VALUE_REAL32:
+        return ReadLEFloat32AsDouble(p);
+    case RAW_VALUE_REAL64:
+        return ReadLEFloat64(p);
+    case RAW_VALUE_COMPLEX128:
+        return ReadLEFloat64(p);
+    default:
+        return 0.0;
+    }
+}
+
+static int RawAppendStepBoundary(Tcl_Interp *interp, Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *capacityPtr,
+                                 Tcl_Size *numStepsPtr, Tcl_Size startPoint) {
+    if (*numStepsPtr == *capacityPtr) {
+        Tcl_Size newCapacity = *capacityPtr ? *capacityPtr * 2 : 8;
+        Tcl_Size *newStarts;
+        Tcl_Size *newCounts;
+        if ((size_t)newCapacity > SIZE_MAX / sizeof(Tcl_Size)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice step boundary array overflow", -1));
+            return TCL_ERROR;
+        }
+        newStarts = (Tcl_Size *)Tcl_Realloc((char *)*startsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
+        newCounts = (Tcl_Size *)Tcl_Realloc((char *)*countsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
+        if (newStarts == NULL || newCounts == NULL) {
+            if (newStarts) {
+                *startsPtr = newStarts;
+            }
+            if (newCounts) {
+                *countsPtr = newCounts;
+            }
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to allocate LTspice step boundaries", -1));
+            return TCL_ERROR;
+        }
+        *startsPtr = newStarts;
+        *countsPtr = newCounts;
+        *capacityPtr = newCapacity;
+    }
+    (*startsPtr)[*numStepsPtr] = startPoint;
+    (*countsPtr)[*numStepsPtr] = 0;
+    (*numStepsPtr)++;
+    return TCL_OK;
+}
+
+static int RawLtspiceFindAxisResetSteps(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot, Tcl_Size **startsPtr,
+                                        Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_Size capacity = 0;
+    Tcl_Size numSteps = 0;
+    Tcl_Size totalPoints = h->numPoints;
+    Tcl_Size maxChunkBytes = 1024 * 1024;
+    Tcl_Size chunkPoints;
+    Tcl_Size done = 0;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    unsigned char *buf = NULL;
+    double previous = 0.0;
+    int havePrevious = 0;
+    if (totalPoints < 0 || h->pointStrideBytes <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice stepped plot dimensions", -1));
+        return TCL_ERROR;
+    }
+    if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, 0) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (totalPoints == 0) {
+        *startsPtr = starts;
+        *countsPtr = counts;
+        *numStepsPtr = numSteps;
+        return TCL_OK;
+    }
+    chunkPoints = maxChunkBytes / h->pointStrideBytes;
+    if (chunkPoints < 1) {
+        chunkPoints = 1;
+    }
+    if (chunkPoints > totalPoints) {
+        chunkPoints = totalPoints;
+    }
+    if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
+        Tcl_Free((char *)starts);
+        Tcl_Free((char *)counts);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped chunk size overflow", -1));
+        return TCL_ERROR;
+    }
+    buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
+    while (done < totalPoints) {
+        Tcl_Size thisPoints = totalPoints - done;
+        Tcl_Size thisBytes;
+        Tcl_WideInt offset;
+        if (thisPoints > chunkPoints) {
+            thisPoints = chunkPoints;
+        }
+        thisBytes = thisPoints * h->pointStrideBytes;
+        offset = plot->dataOffset + (Tcl_WideInt)done * (Tcl_WideInt)h->pointStrideBytes;
+        if (Tcl_Seek(chan, offset, SEEK_SET) < 0) {
+            Tcl_Free((char *)buf);
+            Tcl_Free((char *)starts);
+            Tcl_Free((char *)counts);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside LTspice stepped data", -1));
+            return TCL_ERROR;
+        }
+        if (RawBinaryReadExactBytes(interp, chan, buf, thisBytes) != TCL_OK) {
+            Tcl_Free((char *)buf);
+            Tcl_Free((char *)starts);
+            Tcl_Free((char *)counts);
+            return TCL_ERROR;
+        }
+        for (Tcl_Size i = 0; i < thisPoints; i++) {
+            Tcl_Size pointIndex = done + i;
+            const unsigned char *pointPtr = buf + i * h->pointStrideBytes;
+            double axisValue = RawDecodeBinaryAxisValue(pointPtr, h);
+            /*
+             * LTspice stepped transient runs can be separated without .log metadata by watching
+             * the x-axis/time variable reset. The user requested "stops increasing", so equality
+             * is also treated as a boundary.
+             */
+            if (havePrevious && axisValue <= previous) {
+                counts[numSteps - 1] = pointIndex - starts[numSteps - 1];
+                if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, pointIndex) != TCL_OK) {
+                    Tcl_Free((char *)buf);
+                    Tcl_Free((char *)starts);
+                    Tcl_Free((char *)counts);
+                    return TCL_ERROR;
+                }
+            }
+            previous = axisValue;
+            havePrevious = 1;
+        }
+        done += thisPoints;
+    }
+    counts[numSteps - 1] = totalPoints - starts[numSteps - 1];
+    Tcl_Free((char *)buf);
+    *startsPtr = starts;
+    *countsPtr = counts;
+    *numStepsPtr = numSteps;
+    return TCL_OK;
+}
+
+static int RawLtspiceBuildFixedSteps(Tcl_Interp *interp, Tcl_Size totalPoints, Tcl_Size pointsPerStep,
+                                     Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
+    Tcl_Size numSteps;
+    Tcl_Size *starts;
+    Tcl_Size *counts;
+    if (pointsPerStep <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice per-step point count", -1));
+        return TCL_ERROR;
+    }
+    if (totalPoints % pointsPerStep != 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped data is not divisible by declared point count", -1));
+        return TCL_ERROR;
+    }
+    numSteps = totalPoints / pointsPerStep;
+    if ((size_t)numSteps > SIZE_MAX / sizeof(Tcl_Size)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice fixed step array overflow", -1));
+        return TCL_ERROR;
+    }
+    starts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
+    counts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
+    for (Tcl_Size i = 0; i < numSteps; i++) {
+        starts[i] = i * pointsPerStep;
+        counts[i] = pointsPerStep;
+    }
+    *startsPtr = starts;
+    *countsPtr = counts;
+    *numStepsPtr = numSteps;
+    return TCL_OK;
+}
+
+static int RawLtspiceIsTransientPlot(const RawHeader *h) {
+    if (h->plotname && strstr(h->plotname, "Transient") != NULL) {
+        return 1;
+    }
+    if (h->numVariables > 0 && h->variables && h->variables[0].name && strcmp(h->variables[0].name, "time") == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+static int RawLtspiceAppendSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size *starts,
+                                        Tcl_Size *counts, Tcl_Size numSteps) {
+    RawHeader *h = &basePlot->header;
+    for (Tcl_Size i = 0; i < numSteps; i++) {
+        RawPlot stepPlot;
+        Tcl_Size dataBytes;
+        Tcl_WideInt byteOffset;
+        if (counts[i] <= 0) {
+            continue;
+        }
+        RawPlotInit(&stepPlot);
+        if (RawHeaderClone(interp, &stepPlot.header, h) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+        if (RawMulSize(interp, counts[i], h->pointStrideBytes, "LTspice step byte count overflow", &dataBytes) !=
+            TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+        byteOffset = (Tcl_WideInt)starts[i] * (Tcl_WideInt)h->pointStrideBytes;
+        stepPlot.header.numPoints = counts[i];
+        stepPlot.header.haveNumPoints = 1;
+        stepPlot.dataKind = DATA_BINARY;
+        stepPlot.dataOffset = basePlot->dataOffset + byteOffset;
+        stepPlot.dataBytes = dataBytes;
+        stepPlot.nextOffset = stepPlot.dataOffset + (Tcl_WideInt)dataBytes;
+        if (RawFileAppendPlotMove(interp, rf, &stepPlot) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+    }
+    return TCL_OK;
+}
+
+static int RawLtspiceAppendSplitBinaryPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                            Tcl_Size declaredPoints) {
+    RawHeader *h = &basePlot->header;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    Tcl_Size numSteps = 0;
+    int r;
+    if (!(h->flagsMask & RAW_FLAG_STEPPED)) {
+        return RawFileAppendPlotMove(interp, rf, basePlot);
+    }
+    if (!RawLtspiceIsTransientPlot(h) && declaredPoints > 0 && h->numPoints > declaredPoints &&
+        h->numPoints % declaredPoints == 0) {
+        r = RawLtspiceBuildFixedSteps(interp, h->numPoints, declaredPoints, &starts, &counts, &numSteps);
+    } else {
+        r = RawLtspiceFindAxisResetSteps(interp, rf->chan, basePlot, &starts, &counts, &numSteps);
+    }
+    if (r != TCL_OK) {
+        return TCL_ERROR;
+    }
+    r = RawLtspiceAppendSegmentPlots(interp, rf, basePlot, starts, counts, numSteps);
+    Tcl_Free((char *)starts);
+    Tcl_Free((char *)counts);
+    return r;
 }
 
 //***  RawFileAppendPlotMove function
@@ -2939,6 +3477,32 @@ static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *na
     return TCL_ERROR;
 }
 
+static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
+                            Tcl_Obj **fileNameObjPtr) {
+    RawDialect dialect = RAW_DIALECT_GENERIC;
+    Tcl_Obj *fileNameObj = NULL;
+    if (objc == 2) {
+        fileNameObj = objv[1];
+    } else if (objc == 4 && strcmp(Tcl_GetString(objv[1]), "-dialect") == 0) {
+        const char *dialectName = Tcl_GetString(objv[2]);
+        if (strcmp(dialectName, "generic") == 0) {
+            dialect = RAW_DIALECT_GENERIC;
+        } else if (strcmp(dialectName, "ltspice") == 0) {
+            dialect = RAW_DIALECT_LTSPICE;
+        } else {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", dialectName));
+            return TCL_ERROR;
+        }
+        fileNameObj = objv[3];
+    } else {
+        Tcl_WrongNumArgs(interp, 1, objv, "?-dialect generic|ltspice? fileName");
+        return TCL_ERROR;
+    }
+    *dialectPtr = dialect;
+    *fileNameObjPtr = fileNameObj;
+    return TCL_OK;
+}
+
 //***  RawFileObjCmd function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -3186,18 +3750,20 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *----------------------------------------------------------------------------------------------------------------------
  */
 static Tcl_Size rawHandleCounter = 0;
+
 static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
     Tcl_Channel chan;
     EncKind encKind;
     Tcl_Encoding enc = NULL;
     RawFile *rf;
     Tcl_Obj *nameObj;
+    Tcl_Obj *fileNameObj;
     const char *name;
-    if (objc != 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "fileName");
+    RawDialect dialect;
+    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj) != TCL_OK) {
         return TCL_ERROR;
     }
-    chan = Tcl_FSOpenFileChannel(interp, objv[1], "r", 0);
+    chan = Tcl_FSOpenFileChannel(interp, fileNameObj, "r", 0);
     if (chan == NULL) {
         return TCL_ERROR;
     }
@@ -3213,6 +3779,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     memset(rf, 0, sizeof *rf);
     rf->interp = interp;
     rf->chan = chan;
+    rf->dialect = dialect;
     rf->encKind = encKind;
     rf->enc = enc;
     for (;;) {
@@ -3220,8 +3787,6 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
         RawPlot plot;
         DataKind dataKind;
         Tcl_WideInt dataOffset;
-        Tcl_WideInt nextOffset;
-        Tcl_Size dataBytes;
         RawHeaderStatus r;
         RawHeaderInit(&h);
         RawPlotInit(&plot);
@@ -3246,6 +3811,40 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
         plot.dataOffset = dataOffset;
         RawHeaderMove(&plot.header, &h);
         if (dataKind == DATA_BINARY) {
+            Tcl_WideInt nextOffset;
+            Tcl_Size dataBytes;
+            if (dialect == RAW_DIALECT_LTSPICE) {
+                Tcl_Size declaredPoints;
+                Tcl_WideInt endOffset;
+                if (RawLtspicePrepareBinaryPlot(interp, chan, &plot, &declaredPoints) != TCL_OK) {
+                    RawPlotFree(&plot);
+                    RawFileDeleteProc(rf);
+                    return TCL_ERROR;
+                }
+                endOffset = plot.nextOffset;
+                if (RawLtspiceAppendSplitBinaryPlots(interp, rf, &plot, declaredPoints) != TCL_OK) {
+                    RawPlotFree(&plot);
+                    RawFileDeleteProc(rf);
+                    return TCL_ERROR;
+                }
+                /*
+                 * If the plot was moved by RawFileAppendPlotMove(), RawPlotFree() is safe because
+                 * RawPlotMove() reinitialized it. If pseudo-plots were cloned, this releases the
+                 * original base header.
+                 */
+                RawPlotFree(&plot);
+                if (Tcl_Seek(chan, endOffset, SEEK_SET) < 0) {
+                    RawFileDeleteProc(rf);
+                    Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to skip LTspice binary data block", -1));
+                    return TCL_ERROR;
+                }
+                continue;
+            }
+            if (RawHeaderResolveVariableLayout(interp, &plot.header, dialect, 0) != TCL_OK) {
+                RawPlotFree(&plot);
+                RawFileDeleteProc(rf);
+                return TCL_ERROR;
+            }
             if (ComputeBinaryByteCount(interp, &plot.header, &dataBytes) != TCL_OK) {
                 RawPlotFree(&plot);
                 RawFileDeleteProc(rf);
@@ -3266,8 +3865,26 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
                 Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to skip raw binary data block", -1));
                 return TCL_ERROR;
             }
+            if (RawFileAppendPlotMove(interp, rf, &plot) != TCL_OK) {
+                RawPlotFree(&plot);
+                RawFileDeleteProc(rf);
+                return TCL_ERROR;
+            }
         } else if (dataKind == DATA_VALUES) {
+            /*
+             * ASCII Values: uses token parsing and does not need LTspice mixed binary layout.
+             */
+            if (RawHeaderResolveVariableLayout(interp, &plot.header, RAW_DIALECT_GENERIC, 0) != TCL_OK) {
+                RawPlotFree(&plot);
+                RawFileDeleteProc(rf);
+                return TCL_ERROR;
+            }
             if (RawPlotScanAsciiValues(interp, chan, encKind, enc, &plot) != TCL_OK) {
+                RawPlotFree(&plot);
+                RawFileDeleteProc(rf);
+                return TCL_ERROR;
+            }
+            if (RawFileAppendPlotMove(interp, rf, &plot) != TCL_OK) {
                 RawPlotFree(&plot);
                 RawFileDeleteProc(rf);
                 return TCL_ERROR;
@@ -3276,11 +3893,6 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
             RawPlotFree(&plot);
             RawFileDeleteProc(rf);
             Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw data block kind", -1));
-            return TCL_ERROR;
-        }
-        if (RawFileAppendPlotMove(interp, rf, &plot) != TCL_OK) {
-            RawPlotFree(&plot);
-            RawFileDeleteProc(rf);
             return TCL_ERROR;
         }
     }
