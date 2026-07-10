@@ -1,6 +1,6 @@
 #include "tclsimrawreader.h"
 
-//** Header parsing functions
+//** Header/object lifetime helpers
 //***  RawHeaderInit function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -90,6 +90,287 @@ static void RawHeaderFree(RawHeader *h) {
     memset(h, 0, sizeof *h);
 }
 
+//***  RawHeaderClone function
+static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src) {
+    RawHeaderInit(dst);
+    dst->flagsMask = src->flagsMask;
+    dst->numVariables = src->numVariables;
+    dst->numPoints = src->numPoints;
+    dst->haveNumVariables = src->haveNumVariables;
+    dst->haveNumPoints = src->haveNumPoints;
+    dst->defaultStorage = src->defaultStorage;
+    dst->defaultValueBytes = src->defaultValueBytes;
+    dst->pointStrideBytes = src->pointStrideBytes;
+    if (src->title) {
+        dst->title = StrDupLen(src->title, (Tcl_Size)strlen(src->title));
+    }
+    if (src->date) {
+        dst->date = StrDupLen(src->date, (Tcl_Size)strlen(src->date));
+    }
+    if (src->plotname) {
+        dst->plotname = StrDupLen(src->plotname, (Tcl_Size)strlen(src->plotname));
+    }
+    dst->numFlags = src->numFlags;
+    if (src->numFlags > 0) {
+        if ((size_t)src->numFlags > SIZE_MAX / sizeof(char *)) {
+            RawHeaderFree(dst);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw flag array clone overflow", -1));
+            return TCL_ERROR;
+        }
+        dst->flags = (char **)Tcl_Alloc(sizeof(char *) * (size_t)src->numFlags);
+        memset(dst->flags, 0, sizeof(char *) * (size_t)src->numFlags);
+        for (Tcl_Size i = 0; i < src->numFlags; i++) {
+            if (src->flags[i]) {
+                dst->flags[i] = StrDupLen(src->flags[i], (Tcl_Size)strlen(src->flags[i]));
+            }
+        }
+    }
+    if (src->numVariables > 0) {
+        if ((size_t)src->numVariables > SIZE_MAX / sizeof(RawVariable)) {
+            RawHeaderFree(dst);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw variable array clone overflow", -1));
+            return TCL_ERROR;
+        }
+        dst->variables = (RawVariable *)Tcl_Alloc(sizeof(RawVariable) * (size_t)src->numVariables);
+        memset(dst->variables, 0, sizeof(RawVariable) * (size_t)src->numVariables);
+        for (Tcl_Size i = 0; i < src->numVariables; i++) {
+            const RawVariable *sv = &src->variables[i];
+            RawVariable *dv = &dst->variables[i];
+            dv->index = sv->index;
+            dv->storage = sv->storage;
+            dv->valueBytes = sv->valueBytes;
+            dv->offsetBytes = sv->offsetBytes;
+            if (sv->name) {
+                dv->name = StrDupLen(sv->name, (Tcl_Size)strlen(sv->name));
+            }
+            if (sv->type) {
+                dv->type = StrDupLen(sv->type, (Tcl_Size)strlen(sv->type));
+            }
+        }
+    }
+    return TCL_OK;
+}
+
+//***  RawHeaderMove function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawHeaderMove --
+ *
+ *      Moves ownership of a RawHeader from src to dst.
+ *
+ * Parameters:
+ *      RawHeader *dst - Destination header structure.
+ *      RawHeader *src - Source header structure, reset after the move.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Copies src to dst with structure assignment.
+ *      Reinitializes src so it no longer owns the moved resources.
+ *
+ * Notes:
+ *      This is a move operation, not a deep copy.
+ *      dst must not already own allocated resources.
+ *      After the move, dst owns the resources previously owned by src.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawHeaderMove(RawHeader *dst, RawHeader *src) {
+    *dst = *src;
+    RawHeaderInit(src);
+}
+
+//***  RawPlotInit function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotInit --
+ *
+ *      Initializes a RawPlot structure to an empty state.
+ *
+ * Parameters:
+ *      RawPlot *p - Plot structure to initialize.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Clears p with memset().
+ *      Initializes the embedded RawHeader.
+ *
+ * Notes:
+ *      Call RawPlotFree() first if p already owns allocated memory.
+ *      After initialization, p can be safely passed to RawPlotFree().
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawPlotInit(RawPlot *p) {
+    memset(p, 0, sizeof *p);
+    RawHeaderInit(&p->header);
+}
+
+//***  RawPlotFree function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotFree --
+ *
+ *      Releases all owned storage associated with a RawPlot and clears it.
+ *
+ * Parameters:
+ *      RawPlot *p - Plot structure to release.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Frees owned header storage through RawHeaderFree().
+ *      Frees p->pointOffsets if present.
+ *      Clears p with memset().
+ *
+ * Notes:
+ *      Safe to call on a zero-initialized RawPlot.
+ *      p itself is not freed.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawPlotFree(RawPlot *p) {
+    RawHeaderFree(&p->header);
+    if (p->pointOffsets) {
+        Tcl_Free((char *)p->pointOffsets);
+    }
+    memset(p, 0, sizeof *p);
+}
+
+//***  RawPlotMove function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotMove --
+ *
+ *      Moves ownership of a RawPlot from src to dst.
+ *
+ * Parameters:
+ *      RawPlot *dst - Destination plot structure.
+ *      RawPlot *src - Source plot structure, reset after the move.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Copies src to dst with structure assignment.
+ *      Reinitializes src so it no longer owns the moved resources.
+ *
+ * Notes:
+ *      This is a move operation, not a deep copy.
+ *      dst must not already own allocated resources.
+ *      After the move, dst owns the resources previously owned by src.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawPlotMove(RawPlot *dst, RawPlot *src) {
+    *dst = *src;
+    RawPlotInit(src);
+}
+
+//***  RawFileAppendPlotMove function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawFileAppendPlotMove --
+ *
+ *      Appends plot to rf->plots, transferring ownership to the RawFile.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      RawFile *rf        - Raw file handle whose plot array is extended.
+ *      RawPlot *plot      - Temporary plot to move into rf.
+ *
+ * Results:
+ *      Returns TCL_OK if the plot is appended successfully.
+ *      Returns TCL_ERROR if the plot array cannot be grown.
+ *
+ * Side Effects:
+ *      May grow rf->plots with Tcl_Realloc().
+ *      Moves plot into rf->plots[rf->numPlots] and increments rf->numPlots.
+ *      Sets the interpreter result on allocation failure.
+ *
+ * Notes:
+ *      This is a move operation, not a deep copy.
+ *      On success, rf owns the resources previously owned by plot.
+ *      On error, ownership of plot is unchanged.
+ *      Assumes rf has been initialized and rf->plots is NULL or Tcl-allocated.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot) {
+    if (rf->numPlots == rf->plotCapacity) {
+        Tcl_Size newCapacity = rf->plotCapacity ? rf->plotCapacity * 2 : 4;
+        if ((size_t)newCapacity > SIZE_MAX / sizeof(RawPlot)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw plot array size overflow", -1));
+            return TCL_ERROR;
+        }
+        RawPlot *newPlots = (RawPlot *)Tcl_Realloc((char *)rf->plots, sizeof(RawPlot) * (size_t)newCapacity);
+        if (newPlots == NULL) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to allocate raw plot array", -1));
+            return TCL_ERROR;
+        }
+        rf->plots = newPlots;
+        rf->plotCapacity = newCapacity;
+    }
+    RawPlotMove(&rf->plots[rf->numPlots], plot);
+    rf->numPlots++;
+    return TCL_OK;
+}
+
+//***  RawFileDeleteProc function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawFileDeleteProc --
+ *
+ *      Releases all resources owned by a RawFile handle.
+ *
+ * Parameters:
+ *      void *clientData - RawFile pointer supplied when the Tcl handle command was created.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Closes the file channel if open.
+ *      Releases the encoding handle if present.
+ *      Frees all plots, the plot array, and the RawFile structure itself.
+ *
+ * Notes:
+ *      Registered as the Tcl command delete callback for the raw-file handle.
+ *      Tcl_Close() is called with a NULL interpreter because this is cleanup code.
+ *      After this function returns, the RawFile pointer is invalid.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void RawFileDeleteProc(void *clientData) {
+    RawFile *rf = (RawFile *)clientData;
+    if (rf->chan) {
+        Tcl_Close(NULL, rf->chan);
+        rf->chan = NULL;
+    }
+    if (rf->enc) {
+        Tcl_FreeEncoding(rf->enc);
+        rf->enc = NULL;
+    }
+    for (Tcl_Size i = 0; i < rf->numPlots; i++) {
+        RawPlotFree(&rf->plots[i]);
+    }
+    if (rf->plots) {
+        Tcl_Free((char *)rf->plots);
+    }
+    Tcl_Free((char *)rf);
+}
+
+//** Generic string/token/numeric helpers
 //***  StrDupLen function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -247,6 +528,169 @@ static int StartsWith(const char *s, const char *prefix) {
     return strncmp(s, prefix, n) == 0;
 }
 
+//***  NextToken function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * NextToken --
+ *
+ *      Extracts the next whitespace-delimited token as a borrowed pointer/length pair.
+ *
+ * Parameters:
+ *      const char **pPtr     - Address of the current scan position; advanced past the token on success.
+ *      const char **startPtr - Output pointer to the first byte of the token.
+ *      Tcl_Size *lenPtr      - Output token byte length.
+ *
+ * Results:
+ *      Returns 1 if a token is found; 0 if no token remains.
+ *
+ * Side Effects:
+ *      Advances *pPtr and writes *startPtr and *lenPtr on success.
+ *
+ * Notes:
+ *      The returned token is not NUL-terminated and points into the original string.
+ *      Tokens are separated with isspace() whitespace.
+ *      *pPtr is left after the token, not after following whitespace.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int NextToken(const char **pPtr, const char **startPtr, Tcl_Size *lenPtr) {
+    const char *p = *pPtr;
+    p = SkipSpace(p);
+    if (*p == '\0') {
+        return 0;
+    }
+    *startPtr = p;
+    while (*p && !isspace((unsigned char)*p)) {
+        p++;
+    }
+    *lenPtr = (Tcl_Size)(p - *startPtr);
+    *pPtr = p;
+    return 1;
+}
+
+//***  SkipToken function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * SkipToken --
+ *
+ *      Advances p past one whitespace-delimited token.
+ *
+ * Parameters:
+ *      const char *p - NUL-terminated string pointer at or before the token to skip.
+ *
+ * Results:
+ *      Returns a pointer into the original string after the skipped token, or at the terminating NUL byte.
+ *
+ * Side Effects:
+ *      None.
+ *
+ * Notes:
+ *      Leading whitespace is skipped before scanning the token.
+ *      The returned pointer is borrowed.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static const char *SkipToken(const char *p) {
+    p = SkipSpace(p);
+    while (*p && !isspace((unsigned char)*p)) {
+        p++;
+    }
+    return p;
+}
+
+//***  ParseSizeField function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * ParseSizeField --
+ *
+ *      Parses a non-negative integer size field and stores it as a Tcl_Size.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for numeric conversion and error reporting.
+ *      const char *s      - NUL-terminated value string to parse.
+ *      Tcl_Size *outPtr   - Output location for the parsed size.
+ *
+ * Results:
+ *      Returns TCL_OK if the value is parsed successfully and is non-negative.
+ *      Returns TCL_ERROR on parse failure or negative input.
+ *
+ * Side Effects:
+ *      Creates a temporary Tcl_Obj for Tcl_GetWideIntFromObj().
+ *      Writes the parsed value to *outPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Leading whitespace is skipped before parsing.
+ *      The input string is borrowed and is not modified.
+ *      No upper-bound check is currently made before casting from Tcl_WideInt to Tcl_Size.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int ParseSizeField(Tcl_Interp *interp, const char *s, Tcl_Size *outPtr) {
+    Tcl_Obj *obj;
+    Tcl_WideInt wide;
+
+    s = SkipSpace(s);
+    obj = Tcl_NewStringObj(s, -1);
+    Tcl_IncrRefCount(obj);
+    if (Tcl_GetWideIntFromObj(interp, obj, &wide) != TCL_OK) {
+        Tcl_DecrRefCount(obj);
+        return TCL_ERROR;
+    }
+    Tcl_DecrRefCount(obj);
+    if (wide < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("negative size field in raw header", -1));
+        return TCL_ERROR;
+    }
+    *outPtr = (Tcl_Size)wide;
+    return TCL_OK;
+}
+
+//***  RawMulSize function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawMulSize --
+ *
+ *      Multiplies two Tcl_Size values with overflow checking.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp  - Interpreter used for error reporting.
+ *      Tcl_Size a          - First factor.
+ *      Tcl_Size b          - Second factor.
+ *      const char *message - Error message to set on invalid input or overflow.
+ *      Tcl_Size *outPtr    - Output location for the product.
+ *
+ * Results:
+ *      Returns TCL_OK if the product is computed successfully.
+ *      Returns TCL_ERROR if either factor is negative or the multiplication would overflow.
+ *
+ * Side Effects:
+ *      Stores the product in *outPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The input values are treated as non-negative sizes.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawMulSize(Tcl_Interp *interp, Tcl_Size a, Tcl_Size b, const char *message, Tcl_Size *outPtr) {
+    if (a < 0 || b < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
+        return TCL_ERROR;
+    }
+    if (a != 0 && b > TCL_SIZE_MAX / a) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
+        return TCL_ERROR;
+    }
+    *outPtr = a * b;
+    return TCL_OK;
+}
+
+//** Encoding and decoded line reading
 //***  DetectEncoding function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -508,55 +952,7 @@ static void StripTrailingCR(Tcl_DString *dsPtr) {
     }
 }
 
-//***  ParseSizeField function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * ParseSizeField --
- *
- *      Parses a non-negative integer size field and stores it as a Tcl_Size.
- *
- * Parameters:
- *      Tcl_Interp *interp - Interpreter used for numeric conversion and error reporting.
- *      const char *s      - NUL-terminated value string to parse.
- *      Tcl_Size *outPtr   - Output location for the parsed size.
- *
- * Results:
- *      Returns TCL_OK if the value is parsed successfully and is non-negative.
- *      Returns TCL_ERROR on parse failure or negative input.
- *
- * Side Effects:
- *      Creates a temporary Tcl_Obj for Tcl_GetWideIntFromObj().
- *      Writes the parsed value to *outPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Leading whitespace is skipped before parsing.
- *      The input string is borrowed and is not modified.
- *      No upper-bound check is currently made before casting from Tcl_WideInt to Tcl_Size.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int ParseSizeField(Tcl_Interp *interp, const char *s, Tcl_Size *outPtr) {
-    Tcl_Obj *obj;
-    Tcl_WideInt wide;
-
-    s = SkipSpace(s);
-    obj = Tcl_NewStringObj(s, -1);
-    Tcl_IncrRefCount(obj);
-    if (Tcl_GetWideIntFromObj(interp, obj, &wide) != TCL_OK) {
-        Tcl_DecrRefCount(obj);
-        return TCL_ERROR;
-    }
-    Tcl_DecrRefCount(obj);
-    if (wide < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("negative size field in raw header", -1));
-        return TCL_ERROR;
-    }
-    *outPtr = (Tcl_Size)wide;
-    return TCL_OK;
-}
-
+//** Header parsing
 //***  AppendFlag function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -663,47 +1059,6 @@ static int ParseFlags(Tcl_Interp *interp, RawHeader *h, const char *value) {
     return TCL_OK;
 }
 
-//***  NextToken function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * NextToken --
- *
- *      Extracts the next whitespace-delimited token as a borrowed pointer/length pair.
- *
- * Parameters:
- *      const char **pPtr     - Address of the current scan position; advanced past the token on success.
- *      const char **startPtr - Output pointer to the first byte of the token.
- *      Tcl_Size *lenPtr      - Output token byte length.
- *
- * Results:
- *      Returns 1 if a token is found; 0 if no token remains.
- *
- * Side Effects:
- *      Advances *pPtr and writes *startPtr and *lenPtr on success.
- *
- * Notes:
- *      The returned token is not NUL-terminated and points into the original string.
- *      Tokens are separated with isspace() whitespace.
- *      *pPtr is left after the token, not after following whitespace.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int NextToken(const char **pPtr, const char **startPtr, Tcl_Size *lenPtr) {
-    const char *p = *pPtr;
-    p = SkipSpace(p);
-    if (*p == '\0') {
-        return 0;
-    }
-    *startPtr = p;
-    while (*p && !isspace((unsigned char)*p)) {
-        p++;
-    }
-    *lenPtr = (Tcl_Size)(p - *startPtr);
-    *pPtr = p;
-    return 1;
-}
-
 //***  RawIsVariableTypeToken function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -737,37 +1092,6 @@ static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
         }
     }
     return 0;
-}
-
-//***  SkipToken function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * SkipToken --
- *
- *      Advances p past one whitespace-delimited token.
- *
- * Parameters:
- *      const char *p - NUL-terminated string pointer at or before the token to skip.
- *
- * Results:
- *      Returns a pointer into the original string after the skipped token, or at the terminating NUL byte.
- *
- * Side Effects:
- *      None.
- *
- * Notes:
- *      Leading whitespace is skipped before scanning the token.
- *      The returned pointer is borrowed.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static const char *SkipToken(const char *p) {
-    p = SkipSpace(p);
-    while (*p && !isspace((unsigned char)*p)) {
-        p++;
-    }
-    return p;
 }
 
 //***  ParseVariableLine function
@@ -948,207 +1272,6 @@ static int ReadVariablesSection(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
     return TCL_OK;
 }
 
-//***  ResolveDefaultStorage function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * ResolveDefaultStorage --
- *
- *      Resolves the header-level default value storage from h->flagsMask.
- *
- * Parameters:
- *      Tcl_Interp *interp - Interpreter used for error reporting.
- *      RawHeader *h       - Header to update.
- *
- * Results:
- *      Returns TCL_OK if a recognized storage flag is present; TCL_ERROR otherwise.
- *
- * Side Effects:
- *      Updates h->defaultStorage and h->defaultValueBytes.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Storage precedence is complex, then double, then real.
- *      Resolved sizes are real32 = 4 bytes, real64 = 8 bytes, complex128 = 16 bytes.
- *      Per-variable storage exceptions should be resolved separately.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h) {
-    if (h->flagsMask & RAW_FLAG_COMPLEX) {
-        h->defaultStorage = RAW_VALUE_COMPLEX128;
-        h->defaultValueBytes = 16;
-        return TCL_OK;
-    }
-    if ((h->flagsMask & RAW_FLAG_DOUBLE) || (h->flagsMask & RAW_FLAG_REAL)) {
-        h->defaultStorage = RAW_VALUE_REAL64;
-        h->defaultValueBytes = 8;
-        return TCL_OK;
-    }
-    Tcl_SetObjResult(interp, Tcl_NewStringObj("raw header has no recognized storage flag", -1));
-    return TCL_ERROR;
-}
-
-//***  RawHeaderResolveVariableLayout function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawHeaderResolveVariableLayout --
- *
- *      Resolves per-variable storage, byte offsets, and total point stride for a parsed raw header.
- *
- * Parameters:
- *      Tcl_Interp *interp - Interpreter used for error reporting.
- *      RawHeader *h       - Parsed header whose flags and variables have already been filled.
- *
- * Results:
- *      Returns TCL_OK if storage and offsets are resolved.
- *      Returns TCL_ERROR if default storage cannot be resolved or the point stride would overflow.
- *
- * Side Effects:
- *      Calls ResolveDefaultStorage(), updating h->defaultStorage and h->defaultValueBytes.
- *      Updates each variable's storage, valueBytes, and offsetBytes.
- *      Updates h->pointStrideBytes.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      The current implementation applies the same storage format to every variable.
- *      Dialect-specific per-variable storage exceptions can be added before assigning offsetBytes.
- *      Assumes h->variables contains h->numVariables initialized RawVariable entries.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawSetVariableLayout(Tcl_Interp *interp, RawHeader *h, Tcl_Size index, RawValueStorage storage,
-                                Tcl_Size valueBytes, Tcl_Size *offsetPtr) {
-    RawVariable *v = &h->variables[index];
-    v->storage = storage;
-    v->valueBytes = valueBytes;
-    v->offsetBytes = *offsetPtr;
-    if (valueBytes > TCL_SIZE_MAX - *offsetPtr) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw point stride overflow", -1));
-        return TCL_ERROR;
-    }
-    *offsetPtr += valueBytes;
-    return TCL_OK;
-}
-
-static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h, RawDialect dialect, int ltspiceAllDouble) {
-    Tcl_Size offset = 0;
-    if (h->numVariables < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("negative variable count", -1));
-        return TCL_ERROR;
-    }
-    if (dialect == RAW_DIALECT_LTSPICE) {
-        if (h->flagsMask & RAW_FLAG_FASTACCESS) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
-            return TCL_ERROR;
-        }
-        if (h->flagsMask & RAW_FLAG_COMPLEX) {
-            h->defaultStorage = RAW_VALUE_COMPLEX128;
-            h->defaultValueBytes = 16;
-
-            for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_COMPLEX128, 16, &offset) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-            }
-            h->pointStrideBytes = offset;
-            return TCL_OK;
-        }
-        if (ltspiceAllDouble) {
-            h->defaultStorage = RAW_VALUE_REAL64;
-            h->defaultValueBytes = 8;
-            for (Tcl_Size i = 0; i < h->numVariables; i++) {
-                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-            }
-            h->pointStrideBytes = offset;
-            return TCL_OK;
-        }
-        /*
-         * LTspice normal binary real layout:
-         *
-         *     variable 0: double
-         *     variables 1..N: float
-         *
-         * This covers transient time + traces and sweep axis + traces.
-         */
-        h->defaultStorage = RAW_VALUE_REAL32;
-        h->defaultValueBytes = 4;
-        for (Tcl_Size i = 0; i < h->numVariables; i++) {
-            if (i == 0) {
-                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-            } else {
-                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL32, 4, &offset) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-            }
-        }
-        h->pointStrideBytes = offset;
-        return TCL_OK;
-    }
-    /*
-     * Generic/ngspice/Xyce layout.
-     */
-    if (ResolveDefaultStorage(interp, h) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        if (RawSetVariableLayout(interp, h, i, h->defaultStorage, h->defaultValueBytes, &offset) != TCL_OK) {
-            return TCL_ERROR;
-        }
-    }
-    h->pointStrideBytes = offset;
-    return TCL_OK;
-}
-
-//***  ComputeBinaryByteCount function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * ComputeBinaryByteCount --
- *
- *      Computes the byte size of the binary data block.
- *
- * Parameters:
- *      Tcl_Interp *interp  - Interpreter used for error reporting.
- *      const RawHeader *h  - Parsed header with No. Points and resolved pointStrideBytes.
- *      Tcl_Size *nbytesPtr - Output location for the computed byte count.
- *
- * Results:
- *      Returns TCL_OK if the byte count is computed successfully.
- *      Returns TCL_ERROR if No. Points is missing, size fields are invalid, or multiplication would overflow.
- *
- * Side Effects:
- *      Writes the computed byte count to *nbytesPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Assumes h->pointStrideBytes has already been resolved by RawHeaderResolveVariableLayout().
- *      This size rule applies to Binary: blocks, not textual Values: blocks.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int ComputeBinaryByteCount(Tcl_Interp *interp, const RawHeader *h, Tcl_Size *nbytesPtr) {
-    if (!h->haveNumPoints) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("cannot compute binary size without No. Points", -1));
-        return TCL_ERROR;
-    }
-    if (h->numPoints < 0 || h->pointStrideBytes < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw binary size fields", -1));
-        return TCL_ERROR;
-    }
-    if (h->numPoints != 0 && h->pointStrideBytes > TCL_SIZE_MAX / h->numPoints) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw binary byte count overflow", -1));
-        return TCL_ERROR;
-    }
-    *nbytesPtr = h->numPoints * h->pointStrideBytes;
-    return TCL_OK;
-}
-
 //***  ReadHeader function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -1277,6 +1400,241 @@ static RawHeaderStatus ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind 
     }
 }
 
+//** Storage/layout resolution
+//***  ResolveDefaultStorage function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * ResolveDefaultStorage --
+ *
+ *      Resolves the header-level default value storage from h->flagsMask.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      RawHeader *h       - Header to update.
+ *
+ * Results:
+ *      Returns TCL_OK if a recognized storage flag is present; TCL_ERROR otherwise.
+ *
+ * Side Effects:
+ *      Updates h->defaultStorage and h->defaultValueBytes.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Storage precedence is complex, then double, then real.
+ *      Resolved sizes are real32 = 4 bytes, real64 = 8 bytes, complex128 = 16 bytes.
+ *      Per-variable storage exceptions should be resolved separately.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h) {
+    if (h->flagsMask & RAW_FLAG_COMPLEX) {
+        h->defaultStorage = RAW_VALUE_COMPLEX128;
+        h->defaultValueBytes = 16;
+        return TCL_OK;
+    }
+    if ((h->flagsMask & RAW_FLAG_DOUBLE) || (h->flagsMask & RAW_FLAG_REAL)) {
+        h->defaultStorage = RAW_VALUE_REAL64;
+        h->defaultValueBytes = 8;
+        return TCL_OK;
+    }
+    Tcl_SetObjResult(interp, Tcl_NewStringObj("raw header has no recognized storage flag", -1));
+    return TCL_ERROR;
+}
+
+//***  RawSetVariableLayout function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawSetVariableLayout --
+ *
+ *      Stores storage layout information for one variable and advances the running point-stride offset.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      RawHeader *h             - Header containing the variable table to update.
+ *      Tcl_Size index           - Physical variable index into h->variables.
+ *      RawValueStorage storage  - Storage representation assigned to the variable.
+ *      Tcl_Size valueBytes      - Number of bytes occupied by the variable in one binary point.
+ *      Tcl_Size *offsetPtr      - Running byte offset, updated on success.
+ *
+ * Results:
+ *      Returns TCL_OK if the variable layout is stored successfully.
+ *      Returns TCL_ERROR if advancing the offset would overflow.
+ *
+ * Side Effects:
+ *      Updates the selected variable's storage, valueBytes, and offsetBytes fields.
+ *      Advances *offsetPtr by valueBytes on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The index is a physical index into h->variables.
+ *      The caller is responsible for validating index before calling this function.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawSetVariableLayout(Tcl_Interp *interp, RawHeader *h, Tcl_Size index, RawValueStorage storage,
+                                Tcl_Size valueBytes, Tcl_Size *offsetPtr) {
+    RawVariable *v = &h->variables[index];
+    v->storage = storage;
+    v->valueBytes = valueBytes;
+    v->offsetBytes = *offsetPtr;
+    if (valueBytes > TCL_SIZE_MAX - *offsetPtr) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw point stride overflow", -1));
+        return TCL_ERROR;
+    }
+    *offsetPtr += valueBytes;
+    return TCL_OK;
+}
+
+//***  RawHeaderResolveVariableLayout function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawHeaderResolveVariableLayout --
+ *
+ *      Resolves per-variable storage, byte offsets, and total point stride for a parsed raw header.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp      - Interpreter used for error reporting.
+ *      RawHeader *h            - Parsed header whose flags and variables have already been filled.
+ *      RawDialect dialect      - Raw-file dialect used to resolve storage layout.
+ *      int ltspiceAllDouble    - LTspice real-data flag; non-zero means all real values are stored as doubles.
+ *
+ * Results:
+ *      Returns TCL_OK if storage and offsets are resolved.
+ *      Returns TCL_ERROR if storage cannot be resolved or the point stride would overflow.
+ *
+ * Side Effects:
+ *      Updates h->defaultStorage and h->defaultValueBytes.
+ *      Updates each variable's storage, valueBytes, and offsetBytes.
+ *      Updates h->pointStrideBytes.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The generic dialect applies the header-level storage format to every variable.
+ *      The LTspice dialect applies LTspice binary layout rules, including mixed double/float real data.
+ *      Assumes h->variables contains h->numVariables initialized RawVariable entries.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h, RawDialect dialect, int ltspiceAllDouble) {
+    Tcl_Size offset = 0;
+    if (h->numVariables < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("negative variable count", -1));
+        return TCL_ERROR;
+    }
+    if (dialect == RAW_DIALECT_LTSPICE) {
+        if (h->flagsMask & RAW_FLAG_FASTACCESS) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
+            return TCL_ERROR;
+        }
+        if (h->flagsMask & RAW_FLAG_COMPLEX) {
+            h->defaultStorage = RAW_VALUE_COMPLEX128;
+            h->defaultValueBytes = 16;
+            for (Tcl_Size i = 0; i < h->numVariables; i++) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_COMPLEX128, 16, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+            h->pointStrideBytes = offset;
+            return TCL_OK;
+        }
+        if (ltspiceAllDouble) {
+            h->defaultStorage = RAW_VALUE_REAL64;
+            h->defaultValueBytes = 8;
+            for (Tcl_Size i = 0; i < h->numVariables; i++) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+            h->pointStrideBytes = offset;
+            return TCL_OK;
+        }
+        /*
+         * LTspice normal binary real layout:
+         *
+         *     variable 0: double
+         *     variables 1..N: float
+         *
+         * This covers transient time + traces and sweep axis + traces.
+         */
+        h->defaultStorage = RAW_VALUE_REAL32;
+        h->defaultValueBytes = 4;
+        for (Tcl_Size i = 0; i < h->numVariables; i++) {
+            if (i == 0) {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL64, 8, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            } else {
+                if (RawSetVariableLayout(interp, h, i, RAW_VALUE_REAL32, 4, &offset) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+            }
+        }
+        h->pointStrideBytes = offset;
+        return TCL_OK;
+    }
+    /*
+     * Generic/ngspice/Xyce layout.
+     */
+    if (ResolveDefaultStorage(interp, h) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    for (Tcl_Size i = 0; i < h->numVariables; i++) {
+        if (RawSetVariableLayout(interp, h, i, h->defaultStorage, h->defaultValueBytes, &offset) != TCL_OK) {
+            return TCL_ERROR;
+        }
+    }
+    h->pointStrideBytes = offset;
+    return TCL_OK;
+}
+
+//***  ComputeBinaryByteCount function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * ComputeBinaryByteCount --
+ *
+ *      Computes the byte size of the binary data block.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp  - Interpreter used for error reporting.
+ *      const RawHeader *h  - Parsed header with No. Points and resolved pointStrideBytes.
+ *      Tcl_Size *nbytesPtr - Output location for the computed byte count.
+ *
+ * Results:
+ *      Returns TCL_OK if the byte count is computed successfully.
+ *      Returns TCL_ERROR if No. Points is missing, size fields are invalid, or multiplication would overflow.
+ *
+ * Side Effects:
+ *      Writes the computed byte count to *nbytesPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Assumes h->pointStrideBytes has already been resolved by RawHeaderResolveVariableLayout().
+ *      This size rule applies to Binary: blocks, not textual Values: blocks.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int ComputeBinaryByteCount(Tcl_Interp *interp, const RawHeader *h, Tcl_Size *nbytesPtr) {
+    if (!h->haveNumPoints) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("cannot compute binary size without No. Points", -1));
+        return TCL_ERROR;
+    }
+    if (h->numPoints < 0 || h->pointStrideBytes < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw binary size fields", -1));
+        return TCL_ERROR;
+    }
+    if (h->numPoints != 0 && h->pointStrideBytes > TCL_SIZE_MAX / h->numPoints) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw binary byte count overflow", -1));
+        return TCL_ERROR;
+    }
+    *nbytesPtr = h->numPoints * h->pointStrideBytes;
+    return TCL_OK;
+}
+
+//** Tcl object/result builders
 //***  RawHeaderToDictObj function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -1349,129 +1707,154 @@ static Tcl_Obj *RawHeaderToDictObj(const RawHeader *h) {
     return dictObj;
 }
 
-//** Reading data block functions
-//***  RawPlotInit function
+//***  RawDataKindName function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawPlotInit --
+ * RawDataKindName --
  *
- *      Initializes a RawPlot structure to an empty state.
+ *      Returns a human-readable name for a DataKind value.
  *
  * Parameters:
- *      RawPlot *p - Plot structure to initialize.
+ *      DataKind kind - Data block kind to convert.
  *
  * Results:
- *      None.
+ *      Returns "binary", "values", or "unknown".
  *
  * Side Effects:
- *      Clears p with memset().
- *      Initializes the embedded RawHeader.
+ *      None.
  *
  * Notes:
- *      Call RawPlotFree() first if p already owns allocated memory.
- *      After initialization, p can be safely passed to RawPlotFree().
+ *      The returned string is static storage and must not be freed or modified.
+ *      Unknown or uninitialized values are mapped to "unknown".
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static void RawPlotInit(RawPlot *p) {
-    memset(p, 0, sizeof *p);
-    RawHeaderInit(&p->header);
-}
-
-//***  RawPlotFree function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotFree --
- *
- *      Releases all owned storage associated with a RawPlot and clears it.
- *
- * Parameters:
- *      RawPlot *p - Plot structure to release.
- *
- * Results:
- *      None.
- *
- * Side Effects:
- *      Frees owned header storage through RawHeaderFree().
- *      Frees p->pointOffsets if present.
- *      Clears p with memset().
- *
- * Notes:
- *      Safe to call on a zero-initialized RawPlot.
- *      p itself is not freed.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static void RawPlotFree(RawPlot *p) {
-    RawHeaderFree(&p->header);
-    if (p->pointOffsets) {
-        Tcl_Free((char *)p->pointOffsets);
+static const char *RawDataKindName(DataKind kind) {
+    switch (kind) {
+    case DATA_BINARY:
+        return "binary";
+    case DATA_VALUES:
+        return "values";
+    default:
+        return "unknown";
     }
-    memset(p, 0, sizeof *p);
 }
 
-//***  RawPlotMove function
+//***  RawPlotSummaryObj function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawPlotMove --
+ * RawPlotSummaryObj --
  *
- *      Moves ownership of a RawPlot from src to dst.
+ *      Builds a compact Tcl dictionary summary of one RawPlot.
  *
  * Parameters:
- *      RawPlot *dst - Destination plot structure.
- *      RawPlot *src - Source plot structure, reset after the move.
+ *      const RawPlot *plot - Plot to summarize.
+ *      Tcl_Size index      - Plot index to store in the summary.
  *
  * Results:
- *      None.
+ *      Returns a newly created Tcl dictionary object.
  *
  * Side Effects:
- *      Copies src to dst with structure assignment.
- *      Reinitializes src so it no longer owns the moved resources.
+ *      Allocates a Tcl dictionary and contained Tcl objects.
+ *      Does not modify plot.
  *
  * Notes:
- *      This is a move operation, not a deep copy.
- *      dst must not already own allocated resources.
- *      After the move, dst owns the resources previously owned by src.
+ *      Includes plot index, data kind, title, plot name, variable count, point count, data offset, and data byte count.
+ *      The data kind is converted with RawDataKindName().
+ *      The returned object follows normal Tcl object ownership conventions.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static void RawPlotMove(RawPlot *dst, RawPlot *src) {
-    *dst = *src;
-    RawPlotInit(src);
+static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index) {
+    const RawHeader *h = &plot->header;
+    Tcl_Obj *dictObj = Tcl_NewDictObj();
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("index", -1), Tcl_NewWideIntObj((Tcl_WideInt)index));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("kind", -1), Tcl_NewStringObj(RawDataKindName(plot->dataKind), -1));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("title", -1), Tcl_NewStringObj(h->title ? h->title : "", -1));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("plotname", -1),
+                   Tcl_NewStringObj(h->plotname ? h->plotname : "", -1));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("nvariables", -1), Tcl_NewWideIntObj((Tcl_WideInt)h->numVariables));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("npoints", -1), Tcl_NewWideIntObj((Tcl_WideInt)h->numPoints));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("dataoffset", -1), Tcl_NewWideIntObj(plot->dataOffset));
+    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("databytes", -1), Tcl_NewWideIntObj((Tcl_WideInt)plot->dataBytes));
+    return dictObj;
 }
 
-//***  RawHeaderMove function
+//***  RawBuildVectorResult function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawHeaderMove --
+ * RawBuildVectorResult --
  *
- *      Moves ownership of a RawHeader from src to dst.
+ *      Builds the final Tcl result object from an array of raw vector value lists.
+ *
+ *      The function supports two result shapes:
+ *
+ *          RAW_VECTOR_RESULT_LIST - Return the single selected vector list directly.
+ *          RAW_VECTOR_RESULT_DICT - Return a dictionary mapping vector names to value lists.
  *
  * Parameters:
- *      RawHeader *dst - Destination header structure.
- *      RawHeader *src - Source header structure, reset after the move.
+ *      Tcl_Interp *interp              - Interpreter used for dictionary operations and error reporting.
+ *      RawHeader *h                    - Header containing variable names for dictionary keys.
+ *      Tcl_Size numVars                - Number of selected vectors and entries in vecObjs/varIndexes.
+ *      Tcl_Size *varIndexes            - Array of physical variable indexes into h->variables.
+ *      Tcl_Obj **vecObjs               - Array of Tcl list objects containing decoded vector values.
+ *      RawVectorResultMode resultMode  - Requested result shape.
+ *      Tcl_Obj **objPtr                - Output location for the constructed result object.
  *
  * Results:
- *      None.
+ *      Returns TCL_OK if the result object is built successfully.
+ *      Returns TCL_ERROR if resultMode is invalid, or if list result mode is requested with anything other than one
+ *      selected vector.
  *
  * Side Effects:
- *      Copies src to dst with structure assignment.
- *      Reinitializes src so it no longer owns the moved resources.
+ *      In RAW_VECTOR_RESULT_LIST mode, stores vecObjs[0] in *objPtr and frees only the vecObjs array.
+ *
+ *      In RAW_VECTOR_RESULT_DICT mode, creates a new dictionary, inserts each vector list under its variable name,
+ *      stores the dictionary in *objPtr, and frees the vecObjs array.
+ *
+ *      On error, releases all vector objects with RawFreeVectorObjects() and sets the interpreter result.
  *
  * Notes:
- *      This is a move operation, not a deep copy.
- *      dst must not already own allocated resources.
- *      After the move, dst owns the resources previously owned by src.
+ *      On success, ownership of the returned Tcl object is transferred to the caller through *objPtr.
+ *      On success, the vecObjs pointer array is always freed by this function.
+ *      In dictionary mode, variable names are taken from h->variables[varIndexes[i]].name. Missing names are
+ *      represented as empty strings.
+ *      varIndexes contains physical indexes into h->variables, not necessarily the numeric indexes written in the
+ *      raw-file Variables section.
+ *      Duplicate dictionary keys should already have been rejected by the variable-resolution step.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static void RawHeaderMove(RawHeader *dst, RawHeader *src) {
-    *dst = *src;
-    RawHeaderInit(src);
+static int RawBuildVectorResult(Tcl_Interp *interp, RawHeader *h, Tcl_Size numVars, Tcl_Size *varIndexes,
+                                Tcl_Obj **vecObjs, RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
+    if (resultMode == RAW_VECTOR_RESULT_LIST) {
+        if (numVars != 1) {
+            RawFreeVectorObjects(vecObjs, numVars);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("list result mode requires exactly one vector", -1));
+            return TCL_ERROR;
+        }
+        *objPtr = vecObjs[0];
+        Tcl_Free((char *)vecObjs);
+        return TCL_OK;
+    }
+    if (resultMode == RAW_VECTOR_RESULT_DICT) {
+        Tcl_Obj *dictObj = Tcl_NewDictObj();
+        for (Tcl_Size i = 0; i < numVars; i++) {
+            RawVariable *var = &h->variables[varIndexes[i]];
+            const char *name = var->name ? var->name : "";
+
+            Tcl_DictObjPut(interp, dictObj, Tcl_NewStringObj(name, -1), vecObjs[i]);
+        }
+        Tcl_Free((char *)vecObjs);
+        *objPtr = dictObj;
+        return TCL_OK;
+    }
+    RawFreeVectorObjects(vecObjs, numVars);
+    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw vector result mode", -1));
+    return TCL_ERROR;
 }
 
 //***  RawFreeVectorObjects function
@@ -1517,539 +1900,7 @@ static void RawFreeVectorObjects(Tcl_Obj **vecObjs, Tcl_Size numVars) {
     Tcl_Free((char *)vecObjs);
 }
 
-static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src) {
-    RawHeaderInit(dst);
-    dst->flagsMask = src->flagsMask;
-    dst->numVariables = src->numVariables;
-    dst->numPoints = src->numPoints;
-    dst->haveNumVariables = src->haveNumVariables;
-    dst->haveNumPoints = src->haveNumPoints;
-    dst->defaultStorage = src->defaultStorage;
-    dst->defaultValueBytes = src->defaultValueBytes;
-    dst->pointStrideBytes = src->pointStrideBytes;
-    if (src->title) {
-        dst->title = StrDupLen(src->title, (Tcl_Size)strlen(src->title));
-    }
-    if (src->date) {
-        dst->date = StrDupLen(src->date, (Tcl_Size)strlen(src->date));
-    }
-    if (src->plotname) {
-        dst->plotname = StrDupLen(src->plotname, (Tcl_Size)strlen(src->plotname));
-    }
-    dst->numFlags = src->numFlags;
-    if (src->numFlags > 0) {
-        if ((size_t)src->numFlags > SIZE_MAX / sizeof(char *)) {
-            RawHeaderFree(dst);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw flag array clone overflow", -1));
-            return TCL_ERROR;
-        }
-        dst->flags = (char **)Tcl_Alloc(sizeof(char *) * (size_t)src->numFlags);
-        memset(dst->flags, 0, sizeof(char *) * (size_t)src->numFlags);
-        for (Tcl_Size i = 0; i < src->numFlags; i++) {
-            if (src->flags[i]) {
-                dst->flags[i] = StrDupLen(src->flags[i], (Tcl_Size)strlen(src->flags[i]));
-            }
-        }
-    }
-    if (src->numVariables > 0) {
-        if ((size_t)src->numVariables > SIZE_MAX / sizeof(RawVariable)) {
-            RawHeaderFree(dst);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw variable array clone overflow", -1));
-            return TCL_ERROR;
-        }
-        dst->variables = (RawVariable *)Tcl_Alloc(sizeof(RawVariable) * (size_t)src->numVariables);
-        memset(dst->variables, 0, sizeof(RawVariable) * (size_t)src->numVariables);
-        for (Tcl_Size i = 0; i < src->numVariables; i++) {
-            const RawVariable *sv = &src->variables[i];
-            RawVariable *dv = &dst->variables[i];
-            dv->index = sv->index;
-            dv->storage = sv->storage;
-            dv->valueBytes = sv->valueBytes;
-            dv->offsetBytes = sv->offsetBytes;
-            if (sv->name) {
-                dv->name = StrDupLen(sv->name, (Tcl_Size)strlen(sv->name));
-            }
-            if (sv->type) {
-                dv->type = StrDupLen(sv->type, (Tcl_Size)strlen(sv->type));
-            }
-        }
-    }
-    return TCL_OK;
-}
-
-static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr) {
-    Tcl_WideInt oldPos;
-    Tcl_WideInt endPos;
-    oldPos = Tcl_Tell(chan);
-    if (oldPos < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get current raw-file offset", -1));
-        return TCL_ERROR;
-    }
-    if (Tcl_Seek(chan, 0, SEEK_END) < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to end of raw file", -1));
-        return TCL_ERROR;
-    }
-    endPos = Tcl_Tell(chan);
-    if (endPos < 0) {
-        Tcl_Seek(chan, oldPos, SEEK_SET);
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get raw-file size", -1));
-        return TCL_ERROR;
-    }
-    if (Tcl_Seek(chan, oldPos, SEEK_SET) < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to restore raw-file offset", -1));
-        return TCL_ERROR;
-    }
-    *sizePtr = endPos;
-    return TCL_OK;
-}
-
-static int RawMulSize(Tcl_Interp *interp, Tcl_Size a, Tcl_Size b, const char *message, Tcl_Size *outPtr) {
-    if (a < 0 || b < 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
-        return TCL_ERROR;
-    }
-    if (a != 0 && b > TCL_SIZE_MAX / a) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(message, -1));
-        return TCL_ERROR;
-    }
-    *outPtr = a * b;
-    return TCL_OK;
-}
-
-static int RawLtspiceCandidateStrides(Tcl_Interp *interp, RawHeader *h, Tcl_Size *mixedStridePtr,
-                                      Tcl_Size *doubleStridePtr) {
-    Tcl_Size mixedStride;
-    Tcl_Size doubleStride;
-    if (h->numVariables <= 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw file has no variables", -1));
-        return TCL_ERROR;
-    }
-    if (h->flagsMask & RAW_FLAG_COMPLEX) {
-        if (RawMulSize(interp, h->numVariables, 16, "LTspice complex point stride overflow", doubleStridePtr) !=
-            TCL_OK) {
-            return TCL_ERROR;
-        }
-        *mixedStridePtr = *doubleStridePtr;
-        return TCL_OK;
-    }
-    if (h->numVariables == 1) {
-        mixedStride = 8;
-    } else {
-        Tcl_Size tailBytes;
-        if (RawMulSize(interp, h->numVariables - 1, 4, "LTspice mixed point stride overflow", &tailBytes) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (tailBytes > TCL_SIZE_MAX - 8) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice mixed point stride overflow", -1));
-            return TCL_ERROR;
-        }
-        mixedStride = 8 + tailBytes;
-    }
-    if (RawMulSize(interp, h->numVariables, 8, "LTspice double point stride overflow", &doubleStride) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    *mixedStridePtr = mixedStride;
-    *doubleStridePtr = doubleStride;
-    return TCL_OK;
-}
-
-static int RawLtspiceDetectAllDouble(Tcl_Interp *interp, RawHeader *h, Tcl_Size physicalDataBytes, int *allDoublePtr) {
-    Tcl_Size mixedStride;
-    Tcl_Size doubleStride;
-    Tcl_Size mixedBytes;
-    Tcl_Size doubleBytes;
-    if (h->flagsMask & RAW_FLAG_COMPLEX) {
-        *allDoublePtr = 1;
-        return TCL_OK;
-    }
-    if (RawLtspiceCandidateStrides(interp, h, &mixedStride, &doubleStride) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (h->haveNumPoints && h->numPoints > 0) {
-        if (RawMulSize(interp, h->numPoints, mixedStride, "LTspice mixed data byte count overflow", &mixedBytes) !=
-            TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (RawMulSize(interp, h->numPoints, doubleStride, "LTspice double data byte count overflow", &doubleBytes) !=
-            TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (physicalDataBytes == mixedBytes) {
-            *allDoublePtr = 0;
-            return TCL_OK;
-        }
-        if (physicalDataBytes == doubleBytes) {
-            *allDoublePtr = 1;
-            return TCL_OK;
-        }
-        /*
-         * Some LTspice stepped real/sweep files use No. Points as the per-step count.
-         * In that case the physical data size is an integer multiple of one step.
-         */
-        if ((h->flagsMask & RAW_FLAG_STEPPED) && mixedBytes > 0 && physicalDataBytes % mixedBytes == 0) {
-            *allDoublePtr = 0;
-            return TCL_OK;
-        }
-        if ((h->flagsMask & RAW_FLAG_STEPPED) && doubleBytes > 0 && physicalDataBytes % doubleBytes == 0) {
-            *allDoublePtr = 1;
-            return TCL_OK;
-        }
-    }
-    /*
-     * Last-resort inference. Prefer mixed because it is LTspice's default real-data binary layout.
-     */
-    if (mixedStride > 0 && physicalDataBytes % mixedStride == 0) {
-        *allDoublePtr = 0;
-        return TCL_OK;
-    }
-    if (doubleStride > 0 && physicalDataBytes % doubleStride == 0) {
-        *allDoublePtr = 1;
-        return TCL_OK;
-    }
-    Tcl_SetObjResult(interp,
-                     Tcl_NewStringObj("LTspice binary data size does not match known mixed or double layout", -1));
-    return TCL_ERROR;
-}
-
-static int RawLtspicePrepareBinaryPlot(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot,
-                                       Tcl_Size *declaredPointsPtr) {
-    RawHeader *h = &plot->header;
-    Tcl_WideInt fileSize;
-    Tcl_WideInt physicalWide;
-    Tcl_Size physicalDataBytes;
-    Tcl_Size physicalPoints;
-    int allDouble;
-    if (h->flagsMask & RAW_FLAG_FASTACCESS) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
-        return TCL_ERROR;
-    }
-    if (RawGetChannelSize(interp, chan, &fileSize) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (fileSize < plot->dataOffset) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice raw data offset", -1));
-        return TCL_ERROR;
-    }
-    physicalWide = fileSize - plot->dataOffset;
-    if ((Tcl_WideInt)(Tcl_Size)physicalWide != physicalWide) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw data byte count overflow", -1));
-        return TCL_ERROR;
-    }
-    physicalDataBytes = (Tcl_Size)physicalWide;
-    if (RawLtspiceDetectAllDouble(interp, h, physicalDataBytes, &allDouble) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (RawHeaderResolveVariableLayout(interp, h, RAW_DIALECT_LTSPICE, allDouble) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (h->pointStrideBytes <= 0 || physicalDataBytes % h->pointStrideBytes != 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice binary data is not an integer number of points", -1));
-        return TCL_ERROR;
-    }
-    physicalPoints = physicalDataBytes / h->pointStrideBytes;
-    *declaredPointsPtr = h->haveNumPoints ? h->numPoints : physicalPoints;
-    /*
-     * For LTspice, use the physical point count in the base plot. Stepped files may later
-     * be split into pseudo-plots with smaller per-step point counts.
-     */
-    h->numPoints = physicalPoints;
-    h->haveNumPoints = 1;
-    plot->dataBytes = physicalDataBytes;
-    plot->nextOffset = fileSize;
-    return TCL_OK;
-}
-
-static double RawDecodeBinaryAxisValue(const unsigned char *pointPtr, RawHeader *h) {
-    RawVariable *axis = &h->variables[0];
-    const unsigned char *p = pointPtr + axis->offsetBytes;
-    switch (axis->storage) {
-    case RAW_VALUE_REAL32:
-        return ReadLEFloat32AsDouble(p);
-    case RAW_VALUE_REAL64:
-        return ReadLEFloat64(p);
-    case RAW_VALUE_COMPLEX128:
-        return ReadLEFloat64(p);
-    default:
-        return 0.0;
-    }
-}
-
-static int RawAppendStepBoundary(Tcl_Interp *interp, Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *capacityPtr,
-                                 Tcl_Size *numStepsPtr, Tcl_Size startPoint) {
-    if (*numStepsPtr == *capacityPtr) {
-        Tcl_Size newCapacity = *capacityPtr ? *capacityPtr * 2 : 8;
-        Tcl_Size *newStarts;
-        Tcl_Size *newCounts;
-        if ((size_t)newCapacity > SIZE_MAX / sizeof(Tcl_Size)) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice step boundary array overflow", -1));
-            return TCL_ERROR;
-        }
-        newStarts = (Tcl_Size *)Tcl_Realloc((char *)*startsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
-        newCounts = (Tcl_Size *)Tcl_Realloc((char *)*countsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
-        if (newStarts == NULL || newCounts == NULL) {
-            if (newStarts) {
-                *startsPtr = newStarts;
-            }
-            if (newCounts) {
-                *countsPtr = newCounts;
-            }
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to allocate LTspice step boundaries", -1));
-            return TCL_ERROR;
-        }
-        *startsPtr = newStarts;
-        *countsPtr = newCounts;
-        *capacityPtr = newCapacity;
-    }
-    (*startsPtr)[*numStepsPtr] = startPoint;
-    (*countsPtr)[*numStepsPtr] = 0;
-    (*numStepsPtr)++;
-    return TCL_OK;
-}
-
-static int RawLtspiceFindAxisResetSteps(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot, Tcl_Size **startsPtr,
-                                        Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
-    RawHeader *h = &plot->header;
-    Tcl_Size capacity = 0;
-    Tcl_Size numSteps = 0;
-    Tcl_Size totalPoints = h->numPoints;
-    Tcl_Size maxChunkBytes = 1024 * 1024;
-    Tcl_Size chunkPoints;
-    Tcl_Size done = 0;
-    Tcl_Size *starts = NULL;
-    Tcl_Size *counts = NULL;
-    unsigned char *buf = NULL;
-    double previous = 0.0;
-    int havePrevious = 0;
-    if (totalPoints < 0 || h->pointStrideBytes <= 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice stepped plot dimensions", -1));
-        return TCL_ERROR;
-    }
-    if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, 0) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (totalPoints == 0) {
-        *startsPtr = starts;
-        *countsPtr = counts;
-        *numStepsPtr = numSteps;
-        return TCL_OK;
-    }
-    chunkPoints = maxChunkBytes / h->pointStrideBytes;
-    if (chunkPoints < 1) {
-        chunkPoints = 1;
-    }
-    if (chunkPoints > totalPoints) {
-        chunkPoints = totalPoints;
-    }
-    if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
-        Tcl_Free((char *)starts);
-        Tcl_Free((char *)counts);
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped chunk size overflow", -1));
-        return TCL_ERROR;
-    }
-    buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
-    while (done < totalPoints) {
-        Tcl_Size thisPoints = totalPoints - done;
-        Tcl_Size thisBytes;
-        Tcl_WideInt offset;
-        if (thisPoints > chunkPoints) {
-            thisPoints = chunkPoints;
-        }
-        thisBytes = thisPoints * h->pointStrideBytes;
-        offset = plot->dataOffset + (Tcl_WideInt)done * (Tcl_WideInt)h->pointStrideBytes;
-        if (Tcl_Seek(chan, offset, SEEK_SET) < 0) {
-            Tcl_Free((char *)buf);
-            Tcl_Free((char *)starts);
-            Tcl_Free((char *)counts);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside LTspice stepped data", -1));
-            return TCL_ERROR;
-        }
-        if (RawBinaryReadExactBytes(interp, chan, buf, thisBytes) != TCL_OK) {
-            Tcl_Free((char *)buf);
-            Tcl_Free((char *)starts);
-            Tcl_Free((char *)counts);
-            return TCL_ERROR;
-        }
-        for (Tcl_Size i = 0; i < thisPoints; i++) {
-            Tcl_Size pointIndex = done + i;
-            const unsigned char *pointPtr = buf + i * h->pointStrideBytes;
-            double axisValue = RawDecodeBinaryAxisValue(pointPtr, h);
-            /*
-             * LTspice stepped transient runs can be separated without .log metadata by watching
-             * the x-axis/time variable reset. The user requested "stops increasing", so equality
-             * is also treated as a boundary.
-             */
-            if (havePrevious && axisValue <= previous) {
-                counts[numSteps - 1] = pointIndex - starts[numSteps - 1];
-                if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, pointIndex) != TCL_OK) {
-                    Tcl_Free((char *)buf);
-                    Tcl_Free((char *)starts);
-                    Tcl_Free((char *)counts);
-                    return TCL_ERROR;
-                }
-            }
-            previous = axisValue;
-            havePrevious = 1;
-        }
-        done += thisPoints;
-    }
-    counts[numSteps - 1] = totalPoints - starts[numSteps - 1];
-    Tcl_Free((char *)buf);
-    *startsPtr = starts;
-    *countsPtr = counts;
-    *numStepsPtr = numSteps;
-    return TCL_OK;
-}
-
-static int RawLtspiceBuildFixedSteps(Tcl_Interp *interp, Tcl_Size totalPoints, Tcl_Size pointsPerStep,
-                                     Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
-    Tcl_Size numSteps;
-    Tcl_Size *starts;
-    Tcl_Size *counts;
-    if (pointsPerStep <= 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice per-step point count", -1));
-        return TCL_ERROR;
-    }
-    if (totalPoints % pointsPerStep != 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped data is not divisible by declared point count", -1));
-        return TCL_ERROR;
-    }
-    numSteps = totalPoints / pointsPerStep;
-    if ((size_t)numSteps > SIZE_MAX / sizeof(Tcl_Size)) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice fixed step array overflow", -1));
-        return TCL_ERROR;
-    }
-    starts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
-    counts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
-    for (Tcl_Size i = 0; i < numSteps; i++) {
-        starts[i] = i * pointsPerStep;
-        counts[i] = pointsPerStep;
-    }
-    *startsPtr = starts;
-    *countsPtr = counts;
-    *numStepsPtr = numSteps;
-    return TCL_OK;
-}
-
-static int RawLtspiceIsTransientPlot(const RawHeader *h) {
-    if (h->plotname && strstr(h->plotname, "Transient") != NULL) {
-        return 1;
-    }
-    if (h->numVariables > 0 && h->variables && h->variables[0].name && strcmp(h->variables[0].name, "time") == 0) {
-        return 1;
-    }
-    return 0;
-}
-
-static int RawLtspiceAppendSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size *starts,
-                                        Tcl_Size *counts, Tcl_Size numSteps) {
-    RawHeader *h = &basePlot->header;
-    for (Tcl_Size i = 0; i < numSteps; i++) {
-        RawPlot stepPlot;
-        Tcl_Size dataBytes;
-        Tcl_WideInt byteOffset;
-        if (counts[i] <= 0) {
-            continue;
-        }
-        RawPlotInit(&stepPlot);
-        if (RawHeaderClone(interp, &stepPlot.header, h) != TCL_OK) {
-            RawPlotFree(&stepPlot);
-            return TCL_ERROR;
-        }
-        if (RawMulSize(interp, counts[i], h->pointStrideBytes, "LTspice step byte count overflow", &dataBytes) !=
-            TCL_OK) {
-            RawPlotFree(&stepPlot);
-            return TCL_ERROR;
-        }
-        byteOffset = (Tcl_WideInt)starts[i] * (Tcl_WideInt)h->pointStrideBytes;
-        stepPlot.header.numPoints = counts[i];
-        stepPlot.header.haveNumPoints = 1;
-        stepPlot.dataKind = DATA_BINARY;
-        stepPlot.dataOffset = basePlot->dataOffset + byteOffset;
-        stepPlot.dataBytes = dataBytes;
-        stepPlot.nextOffset = stepPlot.dataOffset + (Tcl_WideInt)dataBytes;
-        if (RawFileAppendPlotMove(interp, rf, &stepPlot) != TCL_OK) {
-            RawPlotFree(&stepPlot);
-            return TCL_ERROR;
-        }
-    }
-    return TCL_OK;
-}
-
-static int RawLtspiceAppendSplitBinaryPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
-                                            Tcl_Size declaredPoints) {
-    RawHeader *h = &basePlot->header;
-    Tcl_Size *starts = NULL;
-    Tcl_Size *counts = NULL;
-    Tcl_Size numSteps = 0;
-    int r;
-    if (!(h->flagsMask & RAW_FLAG_STEPPED)) {
-        return RawFileAppendPlotMove(interp, rf, basePlot);
-    }
-    if (!RawLtspiceIsTransientPlot(h) && declaredPoints > 0 && h->numPoints > declaredPoints &&
-        h->numPoints % declaredPoints == 0) {
-        r = RawLtspiceBuildFixedSteps(interp, h->numPoints, declaredPoints, &starts, &counts, &numSteps);
-    } else {
-        r = RawLtspiceFindAxisResetSteps(interp, rf->chan, basePlot, &starts, &counts, &numSteps);
-    }
-    if (r != TCL_OK) {
-        return TCL_ERROR;
-    }
-    r = RawLtspiceAppendSegmentPlots(interp, rf, basePlot, starts, counts, numSteps);
-    Tcl_Free((char *)starts);
-    Tcl_Free((char *)counts);
-    return r;
-}
-
-//***  RawFileAppendPlotMove function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawFileAppendPlotMove --
- *
- *      Appends plot to rf->plots, transferring ownership to the RawFile.
- *
- * Parameters:
- *      Tcl_Interp *interp - Interpreter used for error reporting.
- *      RawFile *rf        - Raw file handle whose plot array is extended.
- *      RawPlot *plot      - Temporary plot to move into rf.
- *
- * Results:
- *      Returns TCL_OK if the plot is appended successfully.
- *      Returns TCL_ERROR if the plot array cannot be grown.
- *
- * Side Effects:
- *      May grow rf->plots with Tcl_Realloc().
- *      Moves plot into rf->plots[rf->numPlots] and increments rf->numPlots.
- *      Sets the interpreter result on allocation failure.
- *
- * Notes:
- *      This is a move operation, not a deep copy.
- *      On success, rf owns the resources previously owned by plot.
- *      On error, ownership of plot is unchanged.
- *      Assumes rf has been initialized and rf->plots is NULL or Tcl-allocated.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot) {
-    if (rf->numPlots == rf->plotCapacity) {
-        Tcl_Size newCapacity = rf->plotCapacity ? rf->plotCapacity * 2 : 4;
-        if ((size_t)newCapacity > SIZE_MAX / sizeof(RawPlot)) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw plot array size overflow", -1));
-            return TCL_ERROR;
-        }
-        RawPlot *newPlots = (RawPlot *)Tcl_Realloc((char *)rf->plots, sizeof(RawPlot) * (size_t)newCapacity);
-        if (newPlots == NULL) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to allocate raw plot array", -1));
-            return TCL_ERROR;
-        }
-        rf->plots = newPlots;
-        rf->plotCapacity = newCapacity;
-    }
-    RawPlotMove(&rf->plots[rf->numPlots], plot);
-    rf->numPlots++;
-    return TCL_OK;
-}
-
+//** Binary value reading/decoding
 //***  ReadLEFloat32AsDouble function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -2110,85 +1961,6 @@ static double ReadLEFloat64(const unsigned char *p) {
     double d;
     memcpy(&d, &u, sizeof d);
     return d;
-}
-
-//***  RawPlotResolveVariableList function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotResolveVariableList --
- *
- *      Resolves a Tcl list of raw vector names to an owned array of variable indexes for a plot.
- *
- * Parameters:
- *      Tcl_Interp *interp       - Interpreter used for list parsing and error reporting.
- *      RawPlot *plot            - Plot whose variable table is searched.
- *      Tcl_Obj *namesObj        - Tcl list object containing vector names to resolve.
- *      Tcl_Size *numVarsPtr     - Output location for the number of resolved variables.
- *      Tcl_Size **varIndexesPtr - Output location for the allocated array of resolved variable indexes.
- *
- * Results:
- *      Returns TCL_OK if namesObj is a valid list and every listed vector name is resolved successfully.
- *      Returns TCL_ERROR if namesObj is not a valid list, an index array allocation would overflow, a vector name is
- *      not found, or the same variable is requested more than once.
- *
- * Side Effects:
- *      Allocates a Tcl-managed array of Tcl_Size indexes and stores it in *varIndexesPtr.
- *      Stores the number of resolved variables in *numVarsPtr.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      The returned index array is owned by the caller and must be released with Tcl_Free().
- *      An empty name list is accepted. In that case, *numVarsPtr is set to 0 and *varIndexesPtr is set to NULL.
- *      Name lookup is delegated to RawPlotFindVariable(), so matching follows the same exact-name rules as the
- *      single-vector command.
- *      Duplicate variables are rejected because dictionary output cannot usefully represent the same variable key
- *      more than once.
- *      The returned indexes are physical indexes into plot->header.variables, not necessarily the numeric indexes
- *      written in the raw-file Variables section.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
-                                      Tcl_Size **varIndexesPtr) {
-    Tcl_Size objc;
-    Tcl_Obj **objv;
-    Tcl_Size *indexes = NULL;
-    if (Tcl_ListObjGetElements(interp, namesObj, &objc, &objv) != TCL_OK) {
-        return TCL_ERROR;
-    }
-    if (objc == 0) {
-        *numVarsPtr = 0;
-        *varIndexesPtr = NULL;
-        return TCL_OK;
-    }
-    if ((size_t)objc > SIZE_MAX / sizeof(Tcl_Size)) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index array overflow", -1));
-        return TCL_ERROR;
-    }
-    indexes = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)objc);
-    for (Tcl_Size i = 0; i < objc; i++) {
-        const char *name = Tcl_GetString(objv[i]);
-        Tcl_Size index;
-        if (RawPlotFindVariable(interp, plot, name, &index) != TCL_OK) {
-            Tcl_Free((char *)indexes);
-            return TCL_ERROR;
-        }
-        /*
-         * Dict output cannot represent duplicate requested keys usefully.
-         */
-        for (Tcl_Size j = 0; j < i; j++) {
-            if (indexes[j] == index) {
-                Tcl_Free((char *)indexes);
-                Tcl_SetObjResult(interp, Tcl_ObjPrintf("duplicate raw vector \"%s\" requested", name));
-                return TCL_ERROR;
-            }
-        }
-        indexes[i] = index;
-    }
-    *numVarsPtr = objc;
-    *varIndexesPtr = indexes;
-    return TCL_OK;
 }
 
 //***  RawBinaryReadExactBytes function
@@ -2266,8 +2038,7 @@ static int RawBinaryReadExactBytes(Tcl_Interp *interp, Tcl_Channel chan, unsigne
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage,
-                                 const unsigned char *p) {
+static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const unsigned char *p) {
     switch (storage) {
     case RAW_VALUE_REAL32:
         Tcl_ListObjAppendElement(interp, listObj, Tcl_NewDoubleObj(ReadLEFloat32AsDouble(p)));
@@ -2288,6 +2059,7 @@ static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSt
     }
 }
 
+//** ASCII value reading/decoding
 //***  RawParseAsciiDoubleToken function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -2632,79 +2404,125 @@ static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind 
     return TCL_OK;
 }
 
-//***  RawBuildVectorResult function
+//** Variable selection
+//***  RawPlotFindVariable function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawBuildVectorResult --
+ * RawPlotFindVariable --
  *
- *      Builds the final Tcl result object from an array of raw vector value lists.
- *
- *      The function supports two result shapes:
- *
- *          RAW_VECTOR_RESULT_LIST - Return the single selected vector list directly.
- *          RAW_VECTOR_RESULT_DICT - Return a dictionary mapping vector names to value lists.
+ *      Finds a variable by name in a RawPlot.
  *
  * Parameters:
- *      Tcl_Interp *interp              - Interpreter used for dictionary operations and error reporting.
- *      RawHeader *h                    - Header containing variable names for dictionary keys.
- *      Tcl_Size numVars                - Number of selected vectors and entries in vecObjs/varIndexes.
- *      Tcl_Size *varIndexes            - Array of physical variable indexes into h->variables.
- *      Tcl_Obj **vecObjs               - Array of Tcl list objects containing decoded vector values.
- *      RawVectorResultMode resultMode  - Requested result shape.
- *      Tcl_Obj **objPtr                - Output location for the constructed result object.
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      RawPlot *plot      - Plot whose variable table is searched.
+ *      const char *name   - NUL-terminated variable name to find.
+ *      Tcl_Size *indexPtr - Output matching variable array index.
  *
  * Results:
- *      Returns TCL_OK if the result object is built successfully.
- *      Returns TCL_ERROR if resultMode is invalid, or if list result mode is requested with anything other than one
- *      selected vector.
+ *      Returns TCL_OK if a matching variable is found; TCL_ERROR otherwise.
  *
  * Side Effects:
- *      In RAW_VECTOR_RESULT_LIST mode, stores vecObjs[0] in *objPtr and frees only the vecObjs array.
- *
- *      In RAW_VECTOR_RESULT_DICT mode, creates a new dictionary, inserts each vector list under its variable name,
- *      stores the dictionary in *objPtr, and frees the vecObjs array.
- *
- *      On error, releases all vector objects with RawFreeVectorObjects() and sets the interpreter result.
+ *      Writes the matching index to *indexPtr on success.
+ *      Sets the interpreter result on failure.
  *
  * Notes:
- *      On success, ownership of the returned Tcl object is transferred to the caller through *objPtr.
- *      On success, the vecObjs pointer array is always freed by this function.
- *      In dictionary mode, variable names are taken from h->variables[varIndexes[i]].name. Missing names are
- *      represented as empty strings.
- *      varIndexes contains physical indexes into h->variables, not necessarily the numeric indexes written in the
- *      raw-file Variables section.
- *      Duplicate dictionary keys should already have been rejected by the variable-resolution step.
+ *      Comparison is byte-wise and case-sensitive.
+ *      The returned index is the array position in h->variables[].
+ *      If duplicate names exist, the first match is returned.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawBuildVectorResult(Tcl_Interp *interp, RawHeader *h, Tcl_Size numVars, Tcl_Size *varIndexes,
-                                Tcl_Obj **vecObjs, RawVectorResultMode resultMode, Tcl_Obj **objPtr) {
-    if (resultMode == RAW_VECTOR_RESULT_LIST) {
-        if (numVars != 1) {
-            RawFreeVectorObjects(vecObjs, numVars);
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("list result mode requires exactly one vector", -1));
+static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr) {
+    RawHeader *h = &plot->header;
+    for (Tcl_Size i = 0; i < h->numVariables; i++) {
+        const char *varName = h->variables[i].name;
+        if (varName && strcmp(varName, name) == 0) {
+            *indexPtr = i;
+            return TCL_OK;
+        }
+    }
+    Tcl_SetObjResult(interp, Tcl_ObjPrintf("raw vector \"%s\" not found", name));
+    return TCL_ERROR;
+}
+
+//***  RawPlotResolveVariableList function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotResolveVariableList --
+ *
+ *      Resolves a Tcl list of raw vector names to an owned array of variable indexes for a plot.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for list parsing and error reporting.
+ *      RawPlot *plot            - Plot whose variable table is searched.
+ *      Tcl_Obj *namesObj        - Tcl list object containing vector names to resolve.
+ *      Tcl_Size *numVarsPtr     - Output location for the number of resolved variables.
+ *      Tcl_Size **varIndexesPtr - Output location for the allocated array of resolved variable indexes.
+ *
+ * Results:
+ *      Returns TCL_OK if namesObj is a valid list and every listed vector name is resolved successfully.
+ *      Returns TCL_ERROR if namesObj is not a valid list, an index array allocation would overflow, a vector name is
+ *      not found, or the same variable is requested more than once.
+ *
+ * Side Effects:
+ *      Allocates a Tcl-managed array of Tcl_Size indexes and stores it in *varIndexesPtr.
+ *      Stores the number of resolved variables in *numVarsPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The returned index array is owned by the caller and must be released with Tcl_Free().
+ *      An empty name list is accepted. In that case, *numVarsPtr is set to 0 and *varIndexesPtr is set to NULL.
+ *      Name lookup is delegated to RawPlotFindVariable(), so matching follows the same exact-name rules as the
+ *      single-vector command.
+ *      Duplicate variables are rejected because dictionary output cannot usefully represent the same variable key
+ *      more than once.
+ *      The returned indexes are physical indexes into plot->header.variables, not necessarily the numeric indexes
+ *      written in the raw-file Variables section.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr) {
+    Tcl_Size objc;
+    Tcl_Obj **objv;
+    Tcl_Size *indexes = NULL;
+    if (Tcl_ListObjGetElements(interp, namesObj, &objc, &objv) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (objc == 0) {
+        *numVarsPtr = 0;
+        *varIndexesPtr = NULL;
+        return TCL_OK;
+    }
+    if ((size_t)objc > SIZE_MAX / sizeof(Tcl_Size)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw vector index array overflow", -1));
+        return TCL_ERROR;
+    }
+    indexes = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)objc);
+    for (Tcl_Size i = 0; i < objc; i++) {
+        const char *name = Tcl_GetString(objv[i]);
+        Tcl_Size index;
+        if (RawPlotFindVariable(interp, plot, name, &index) != TCL_OK) {
+            Tcl_Free((char *)indexes);
             return TCL_ERROR;
         }
-        *objPtr = vecObjs[0];
-        Tcl_Free((char *)vecObjs);
-        return TCL_OK;
-    }
-    if (resultMode == RAW_VECTOR_RESULT_DICT) {
-        Tcl_Obj *dictObj = Tcl_NewDictObj();
-        for (Tcl_Size i = 0; i < numVars; i++) {
-            RawVariable *var = &h->variables[varIndexes[i]];
-            const char *name = var->name ? var->name : "";
-
-            Tcl_DictObjPut(interp, dictObj, Tcl_NewStringObj(name, -1), vecObjs[i]);
+        /*
+         * Dict output cannot represent duplicate requested keys usefully.
+         */
+        for (Tcl_Size j = 0; j < i; j++) {
+            if (indexes[j] == index) {
+                Tcl_Free((char *)indexes);
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("duplicate raw vector \"%s\" requested", name));
+                return TCL_ERROR;
+            }
         }
-        Tcl_Free((char *)vecObjs);
-        *objPtr = dictObj;
-        return TCL_OK;
+        indexes[i] = index;
     }
-    RawFreeVectorObjects(vecObjs, numVars);
-    Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown raw vector result mode", -1));
-    return TCL_ERROR;
+    *numVarsPtr = objc;
+    *varIndexesPtr = indexes;
+    return TCL_OK;
 }
 
 //***  RawPlotResolveAllVariables function
@@ -2769,6 +2587,7 @@ static int RawPlotResolveAllVariables(Tcl_Interp *interp, RawPlot *plot, Tcl_Siz
     return TCL_OK;
 }
 
+//** Generic vector extraction backends
 //***  RawPlotBinaryReadVectorsToObj function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -3135,130 +2954,1435 @@ static int RawPlotReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plo
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex,
-                              Tcl_Size firstPoint, Tcl_Size count, Tcl_Obj **objPtr) {
+static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
+                              Tcl_Size count, Tcl_Obj **objPtr) {
     return RawPlotReadVectorsToObj(interp, rf, plot, 1, &varIndex, firstPoint, count, RAW_VECTOR_RESULT_LIST, objPtr);
 }
 
-//***  RawDataKindName function
+//** LTspice binary dialect support
+//***  RawGetChannelSize function
+static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr) {
+    Tcl_WideInt oldPos;
+    Tcl_WideInt endPos;
+    oldPos = Tcl_Tell(chan);
+    if (oldPos < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get current raw-file offset", -1));
+        return TCL_ERROR;
+    }
+    if (Tcl_Seek(chan, 0, SEEK_END) < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to end of raw file", -1));
+        return TCL_ERROR;
+    }
+    endPos = Tcl_Tell(chan);
+    if (endPos < 0) {
+        Tcl_Seek(chan, oldPos, SEEK_SET);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get raw-file size", -1));
+        return TCL_ERROR;
+    }
+    if (Tcl_Seek(chan, oldPos, SEEK_SET) < 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to restore raw-file offset", -1));
+        return TCL_ERROR;
+    }
+    *sizePtr = endPos;
+    return TCL_OK;
+}
+
+//***  RawGetChannelSize function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawDataKindName --
+ * RawGetChannelSize --
  *
- *      Returns a human-readable name for a DataKind value.
+ *      Gets the total byte size of an open raw-file channel.
  *
  * Parameters:
- *      DataKind kind - Data block kind to convert.
+ *      Tcl_Interp *interp      - Interpreter used for error reporting.
+ *      Tcl_Channel chan        - Channel whose size is queried.
+ *      Tcl_WideInt *sizePtr    - Output location for the channel size.
  *
  * Results:
- *      Returns "binary", "values", or "unknown".
+ *      Returns TCL_OK if the channel size is obtained successfully.
+ *      Returns TCL_ERROR if the current offset, end offset, or seek operation fails.
+ *
+ * Side Effects:
+ *      Temporarily seeks chan to the end of the file.
+ *      Restores the original channel position on success.
+ *      Stores the file size in *sizePtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The returned size is a byte offset suitable for binary raw-file calculations.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceCandidateStrides(Tcl_Interp *interp, RawHeader *h, Tcl_Size *mixedStridePtr,
+                                      Tcl_Size *doubleStridePtr) {
+    Tcl_Size mixedStride;
+    Tcl_Size doubleStride;
+    if (h->numVariables <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw file has no variables", -1));
+        return TCL_ERROR;
+    }
+    if (h->flagsMask & RAW_FLAG_COMPLEX) {
+        if (RawMulSize(interp, h->numVariables, 16, "LTspice complex point stride overflow", doubleStridePtr) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        *mixedStridePtr = *doubleStridePtr;
+        return TCL_OK;
+    }
+    if (h->numVariables == 1) {
+        mixedStride = 8;
+    } else {
+        Tcl_Size tailBytes;
+        if (RawMulSize(interp, h->numVariables - 1, 4, "LTspice mixed point stride overflow", &tailBytes) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (tailBytes > TCL_SIZE_MAX - 8) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice mixed point stride overflow", -1));
+            return TCL_ERROR;
+        }
+        mixedStride = 8 + tailBytes;
+    }
+    if (RawMulSize(interp, h->numVariables, 8, "LTspice double point stride overflow", &doubleStride) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    *mixedStridePtr = mixedStride;
+    *doubleStridePtr = doubleStride;
+    return TCL_OK;
+}
+
+//***  RawLtspiceDetectAllDouble function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceDetectAllDouble --
+ *
+ *      Determines whether LTspice real binary data uses mixed double/float storage or all-double storage.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp          - Interpreter used for error reporting.
+ *      RawHeader *h                - Parsed header used to compute candidate point strides.
+ *      Tcl_Size physicalDataBytes  - Physical byte size of the binary data block.
+ *      int *allDoublePtr           - Output flag; non-zero means all real values are stored as doubles.
+ *
+ * Results:
+ *      Returns TCL_OK if the storage mode is inferred successfully.
+ *      Returns TCL_ERROR if the data size does not match any supported LTspice layout.
+ *
+ * Side Effects:
+ *      Stores the inferred storage mode in *allDoublePtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Complex LTspice data is always treated as double-based complex storage.
+ *      For stepped files, No. Points may describe one step rather than the whole physical data block.
+ *      Mixed real storage is preferred as the fallback because it is LTspice's default binary layout.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceDetectAllDouble(Tcl_Interp *interp, RawHeader *h, Tcl_Size physicalDataBytes, int *allDoublePtr) {
+    Tcl_Size mixedStride;
+    Tcl_Size doubleStride;
+    Tcl_Size mixedBytes;
+    Tcl_Size doubleBytes;
+    if (h->flagsMask & RAW_FLAG_COMPLEX) {
+        *allDoublePtr = 1;
+        return TCL_OK;
+    }
+    if (RawLtspiceCandidateStrides(interp, h, &mixedStride, &doubleStride) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (h->haveNumPoints && h->numPoints > 0) {
+        if (RawMulSize(interp, h->numPoints, mixedStride, "LTspice mixed data byte count overflow", &mixedBytes) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (RawMulSize(interp, h->numPoints, doubleStride, "LTspice double data byte count overflow", &doubleBytes) !=
+            TCL_OK) {
+            return TCL_ERROR;
+        }
+        if (physicalDataBytes == mixedBytes) {
+            *allDoublePtr = 0;
+            return TCL_OK;
+        }
+        if (physicalDataBytes == doubleBytes) {
+            *allDoublePtr = 1;
+            return TCL_OK;
+        }
+        /*
+         * Some LTspice stepped real/sweep files use No. Points as the per-step count.
+         * In that case the physical data size is an integer multiple of one step.
+         */
+        if ((h->flagsMask & RAW_FLAG_STEPPED) && mixedBytes > 0 && physicalDataBytes % mixedBytes == 0) {
+            *allDoublePtr = 0;
+            return TCL_OK;
+        }
+        if ((h->flagsMask & RAW_FLAG_STEPPED) && doubleBytes > 0 && physicalDataBytes % doubleBytes == 0) {
+            *allDoublePtr = 1;
+            return TCL_OK;
+        }
+    }
+    /*
+     * Last-resort inference. Prefer mixed because it is LTspice's default real-data binary layout.
+     */
+    if (mixedStride > 0 && physicalDataBytes % mixedStride == 0) {
+        *allDoublePtr = 0;
+        return TCL_OK;
+    }
+    if (doubleStride > 0 && physicalDataBytes % doubleStride == 0) {
+        *allDoublePtr = 1;
+        return TCL_OK;
+    }
+    Tcl_SetObjResult(interp,
+                     Tcl_NewStringObj("LTspice binary data size does not match known mixed or double layout", -1));
+    return TCL_ERROR;
+}
+
+//***  RawLtspicePrepareBinaryPlot function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspicePrepareBinaryPlot --
+ *
+ *      Resolves LTspice binary layout and physical point count for a plot.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp            - Interpreter used for error reporting.
+ *      Tcl_Channel chan              - Raw-file channel used to determine physical data size.
+ *      RawPlot *plot                 - Plot whose header and data offsets are updated.
+ *      Tcl_Size *declaredPointsPtr   - Output location for the original No. Points value.
+ *
+ * Results:
+ *      Returns TCL_OK if the LTspice binary plot is prepared successfully.
+ *      Returns TCL_ERROR if FastAccess is used, offsets are invalid, layout cannot be inferred, or data size is invalid.
+ *
+ * Side Effects:
+ *      Resolves LTspice variable layout in plot->header.
+ *      Updates plot->header.numPoints to the physical point count.
+ *      Updates plot->dataBytes and plot->nextOffset.
+ *      Stores the declared point count in *declaredPointsPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Stepped LTspice files may use No. Points as a per-step count.
+ *      The base plot keeps the full physical point count before optional splitting into pseudo-plots.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspicePrepareBinaryPlot(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot,
+                                       Tcl_Size *declaredPointsPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_WideInt fileSize;
+    Tcl_WideInt physicalWide;
+    Tcl_Size physicalDataBytes;
+    Tcl_Size physicalPoints;
+    int allDouble;
+    if (h->flagsMask & RAW_FLAG_FASTACCESS) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice FastAccess raw files are not supported yet", -1));
+        return TCL_ERROR;
+    }
+    if (RawGetChannelSize(interp, chan, &fileSize) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (fileSize < plot->dataOffset) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice raw data offset", -1));
+        return TCL_ERROR;
+    }
+    physicalWide = fileSize - plot->dataOffset;
+    if ((Tcl_WideInt)(Tcl_Size)physicalWide != physicalWide) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice raw data byte count overflow", -1));
+        return TCL_ERROR;
+    }
+    physicalDataBytes = (Tcl_Size)physicalWide;
+    if (RawLtspiceDetectAllDouble(interp, h, physicalDataBytes, &allDouble) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (RawHeaderResolveVariableLayout(interp, h, RAW_DIALECT_LTSPICE, allDouble) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (h->pointStrideBytes <= 0 || physicalDataBytes % h->pointStrideBytes != 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice binary data is not an integer number of points", -1));
+        return TCL_ERROR;
+    }
+    physicalPoints = physicalDataBytes / h->pointStrideBytes;
+    *declaredPointsPtr = h->haveNumPoints ? h->numPoints : physicalPoints;
+    /*
+     * For LTspice, use the physical point count in the base plot. Stepped files may later
+     * be split into pseudo-plots with smaller per-step point counts.
+     */
+    h->numPoints = physicalPoints;
+    h->haveNumPoints = 1;
+    plot->dataBytes = physicalDataBytes;
+    plot->nextOffset = fileSize;
+    return TCL_OK;
+}
+
+//***  RawDecodeBinaryAxisValue function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawDecodeBinaryAxisValue --
+ *
+ *      Decodes the first variable value from one binary point as a scalar axis value.
+ *
+ * Parameters:
+ *      const unsigned char *pointPtr - Pointer to the beginning of one binary point.
+ *      RawHeader *h                  - Header containing resolved variable layout.
+ *
+ * Results:
+ *      Returns the decoded axis value.
  *
  * Side Effects:
  *      None.
  *
  * Notes:
- *      The returned string is static storage and must not be freed or modified.
- *      Unknown or uninitialized values are mapped to "unknown".
+ *      The axis variable is h->variables[0].
+ *      For complex storage, only the real component is returned.
+ *      Returns 0.0 for an unknown storage type.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static const char *RawDataKindName(DataKind kind) {
-    switch (kind) {
-    case DATA_BINARY:
-        return "binary";
-    case DATA_VALUES:
-        return "values";
+static double RawDecodeBinaryAxisValue(const unsigned char *pointPtr, RawHeader *h) {
+    RawVariable *axis = &h->variables[0];
+    const unsigned char *p = pointPtr + axis->offsetBytes;
+    switch (axis->storage) {
+    case RAW_VALUE_REAL32:
+        return ReadLEFloat32AsDouble(p);
+    case RAW_VALUE_REAL64:
+        return ReadLEFloat64(p);
+    case RAW_VALUE_COMPLEX128:
+        return ReadLEFloat64(p);
     default:
-        return "unknown";
+        return 0.0;
     }
 }
 
-//***  RawPlotSummaryObj function
+//** LTspice stepped plot splitting
+//***  RawAppendStepBoundary function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawPlotSummaryObj --
+ * RawAppendStepBoundary --
  *
- *      Builds a compact Tcl dictionary summary of one RawPlot.
+ *      Appends one LTspice step start point to the step-boundary arrays.
  *
  * Parameters:
- *      const RawPlot *plot - Plot to summarize.
- *      Tcl_Size index      - Plot index to store in the summary.
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      Tcl_Size **startsPtr     - Address of the step-start array.
+ *      Tcl_Size **countsPtr     - Address of the step-count array.
+ *      Tcl_Size *capacityPtr    - Current allocated capacity of both arrays.
+ *      Tcl_Size *numStepsPtr    - Current number of stored steps.
+ *      Tcl_Size startPoint      - Start point index for the new step.
  *
  * Results:
- *      Returns a newly created Tcl dictionary object.
+ *      Returns TCL_OK if the boundary is appended successfully.
+ *      Returns TCL_ERROR if the arrays cannot be grown.
  *
  * Side Effects:
- *      Allocates a Tcl dictionary and contained Tcl objects.
- *      Does not modify plot.
+ *      May resize *startsPtr and *countsPtr.
+ *      Appends startPoint and a zero placeholder count.
+ *      Updates *capacityPtr and *numStepsPtr.
+ *      Sets the interpreter result on failure.
  *
  * Notes:
- *      Includes plot index, data kind, title, plot name, variable count, point count, data offset, and data byte count.
- *      The data kind is converted with RawDataKindName().
- *      The returned object follows normal Tcl object ownership conventions.
+ *      The caller fills the step count after the step end is known.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index) {
-    const RawHeader *h = &plot->header;
-    Tcl_Obj *dictObj = Tcl_NewDictObj();
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("index", -1), Tcl_NewWideIntObj((Tcl_WideInt)index));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("kind", -1), Tcl_NewStringObj(RawDataKindName(plot->dataKind), -1));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("title", -1), Tcl_NewStringObj(h->title ? h->title : "", -1));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("plotname", -1),
-                   Tcl_NewStringObj(h->plotname ? h->plotname : "", -1));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("nvariables", -1), Tcl_NewWideIntObj((Tcl_WideInt)h->numVariables));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("npoints", -1), Tcl_NewWideIntObj((Tcl_WideInt)h->numPoints));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("dataoffset", -1), Tcl_NewWideIntObj(plot->dataOffset));
-    Tcl_DictObjPut(NULL, dictObj, Tcl_NewStringObj("databytes", -1), Tcl_NewWideIntObj((Tcl_WideInt)plot->dataBytes));
-    return dictObj;
+static int RawAppendStepBoundary(Tcl_Interp *interp, Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *capacityPtr,
+                                 Tcl_Size *numStepsPtr, Tcl_Size startPoint) {
+    if (*numStepsPtr == *capacityPtr) {
+        Tcl_Size newCapacity = *capacityPtr ? *capacityPtr * 2 : 8;
+        Tcl_Size *newStarts;
+        Tcl_Size *newCounts;
+        if ((size_t)newCapacity > SIZE_MAX / sizeof(Tcl_Size)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice step boundary array overflow", -1));
+            return TCL_ERROR;
+        }
+        newStarts = (Tcl_Size *)Tcl_Realloc((char *)*startsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
+        newCounts = (Tcl_Size *)Tcl_Realloc((char *)*countsPtr, sizeof(Tcl_Size) * (size_t)newCapacity);
+        if (newStarts == NULL || newCounts == NULL) {
+            if (newStarts) {
+                *startsPtr = newStarts;
+            }
+            if (newCounts) {
+                *countsPtr = newCounts;
+            }
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to allocate LTspice step boundaries", -1));
+            return TCL_ERROR;
+        }
+        *startsPtr = newStarts;
+        *countsPtr = newCounts;
+        *capacityPtr = newCapacity;
+    }
+    (*startsPtr)[*numStepsPtr] = startPoint;
+    (*countsPtr)[*numStepsPtr] = 0;
+    (*numStepsPtr)++;
+    return TCL_OK;
 }
 
-//** Tcl command registering/processing function
-//***  RawFileDeleteProc function
+//***  RawLtspiceFindAxisResetSteps function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawFileDeleteProc --
+ * RawLtspiceFindAxisResetSteps --
  *
- *      Releases all resources owned by a RawFile handle.
+ *      Finds LTspice step boundaries by scanning the binary axis variable for resets.
  *
  * Parameters:
- *      void *clientData - RawFile pointer supplied when the Tcl handle command was created.
+ *      Tcl_Interp *interp     - Interpreter used for error reporting.
+ *      Tcl_Channel chan       - Raw-file channel used to read binary data.
+ *      RawPlot *plot          - Plot whose binary data is scanned.
+ *      int transientMode      - Non-zero to use transient time-reset detection.
+ *      Tcl_Size **startsPtr   - Output location for the step-start array.
+ *      Tcl_Size **countsPtr   - Output location for the step-count array.
+ *      Tcl_Size *numStepsPtr  - Output location for the number of detected steps.
  *
  * Results:
+ *      Returns TCL_OK if the step boundaries are detected successfully.
+ *      Returns TCL_ERROR if plot dimensions are invalid, allocation fails, or binary reading fails.
+ *
+ * Side Effects:
+ *      Seeks and reads from chan.
+ *      Allocates step-start and step-count arrays owned by the caller.
+ *      Stores the arrays and step count in the output locations.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The first point is always treated as the start of the first step.
+ *      In transient mode, a new step is detected when the axis value is less than or equal to the previous value.
+ *      In non-transient mode, sweep direction is detected and reset detection is direction-aware.
+ *      Binary data is scanned in chunks of complete points.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceFindAxisResetSteps(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot, int transientMode,
+                                        Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
+    RawHeader *h = &plot->header;
+    RawAxisDirection direction = RAW_AXIS_DIRECTION_UNKNOWN;
+    Tcl_Size capacity = 0;
+    Tcl_Size numSteps = 0;
+    Tcl_Size totalPoints = h->numPoints;
+    Tcl_Size maxChunkBytes = 1024 * 1024;
+    Tcl_Size chunkPoints;
+    Tcl_Size done = 0;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    unsigned char *buf = NULL;
+    double previous = 0.0;
+    int havePrevious = 0;
+    if (totalPoints < 0 || h->pointStrideBytes <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice stepped plot dimensions", -1));
+        return TCL_ERROR;
+    }
+    if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, 0) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (totalPoints == 0) {
+        *startsPtr = starts;
+        *countsPtr = counts;
+        *numStepsPtr = numSteps;
+        return TCL_OK;
+    }
+    chunkPoints = maxChunkBytes / h->pointStrideBytes;
+    if (chunkPoints < 1) {
+        chunkPoints = 1;
+    }
+    if (chunkPoints > totalPoints) {
+        chunkPoints = totalPoints;
+    }
+    if (chunkPoints > TCL_SIZE_MAX / h->pointStrideBytes) {
+        Tcl_Free((char *)starts);
+        Tcl_Free((char *)counts);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped chunk size overflow", -1));
+        return TCL_ERROR;
+    }
+    buf = (unsigned char *)Tcl_Alloc((size_t)(chunkPoints * h->pointStrideBytes));
+    while (done < totalPoints) {
+        Tcl_Size thisPoints = totalPoints - done;
+        Tcl_Size thisBytes;
+        Tcl_WideInt offset;
+        if (thisPoints > chunkPoints) {
+            thisPoints = chunkPoints;
+        }
+        thisBytes = thisPoints * h->pointStrideBytes;
+        offset = plot->dataOffset + (Tcl_WideInt)done * (Tcl_WideInt)h->pointStrideBytes;
+        if (Tcl_Seek(chan, offset, SEEK_SET) < 0) {
+            Tcl_Free((char *)buf);
+            Tcl_Free((char *)starts);
+            Tcl_Free((char *)counts);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside LTspice stepped data", -1));
+            return TCL_ERROR;
+        }
+        if (RawBinaryReadExactBytes(interp, chan, buf, thisBytes) != TCL_OK) {
+            Tcl_Free((char *)buf);
+            Tcl_Free((char *)starts);
+            Tcl_Free((char *)counts);
+            return TCL_ERROR;
+        }
+        for (Tcl_Size i = 0; i < thisPoints; i++) {
+            Tcl_Size pointIndex = done + i;
+            const unsigned char *pointPtr = buf + i * h->pointStrideBytes;
+            double axisValue = RawDecodeBinaryAxisValue(pointPtr, h);
+            /*
+             * LTspice stepped transient runs can be separated without .log metadata by watching
+             * the x-axis/time variable reset. The user requested "stops increasing", so equality
+             * is also treated as a boundary.
+             */
+            if (havePrevious &&
+                (transientMode ? (axisValue <= previous) : RawAxisStartsNewStep(previous, axisValue, &direction))) {
+                counts[numSteps - 1] = pointIndex - starts[numSteps - 1];
+                if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, pointIndex) != TCL_OK) {
+                    Tcl_Free((char *)buf);
+                    Tcl_Free((char *)starts);
+                    Tcl_Free((char *)counts);
+                    return TCL_ERROR;
+                }
+                direction = RAW_AXIS_DIRECTION_UNKNOWN;
+            }
+            previous = axisValue;
+            havePrevious = 1;
+        }
+        done += thisPoints;
+    }
+    counts[numSteps - 1] = totalPoints - starts[numSteps - 1];
+    Tcl_Free((char *)buf);
+    *startsPtr = starts;
+    *countsPtr = counts;
+    *numStepsPtr = numSteps;
+    return TCL_OK;
+}
+
+//***  RawAxisStartsNewStep function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawAxisStartsNewStep --
+ *
+ *      Tests whether a non-transient axis value starts a new step.
+ *
+ * Parameters:
+ *      double previous                 - Previous axis value.
+ *      double current                  - Current axis value.
+ *      RawAxisDirection *directionPtr  - Current sweep direction, updated while scanning.
+ *
+ * Results:
+ *      Returns non-zero if current starts a new step; zero otherwise.
+ *
+ * Side Effects:
+ *      May update *directionPtr when the sweep direction is first detected.
+ *
+ * Notes:
+ *      Increasing sweeps start a new step when current <= previous.
+ *      Decreasing sweeps start a new step when current >= previous.
+ *      Equal values before direction is known are treated as a step boundary.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawAxisStartsNewStep(double previous, double current, RawAxisDirection *directionPtr) {
+    if (*directionPtr == RAW_AXIS_DIRECTION_UNKNOWN) {
+        if (current > previous) {
+            *directionPtr = RAW_AXIS_DIRECTION_INCREASING;
+            return 0;
+        }
+        if (current < previous) {
+            *directionPtr = RAW_AXIS_DIRECTION_DECREASING;
+            return 0;
+        }
+        /*
+         * Equal axis before direction is known is treated as a boundary.
+         */
+        return 1;
+    }
+    if (*directionPtr == RAW_AXIS_DIRECTION_INCREASING) {
+        return current <= previous;
+    }
+    return current >= previous;
+}
+
+//***  RawLtspiceBuildFixedSteps function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceBuildFixedSteps --
+ *
+ *      Builds LTspice step boundaries from a fixed number of points per step.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp     - Interpreter used for error reporting.
+ *      Tcl_Size totalPoints   - Total number of physical points in the data block.
+ *      Tcl_Size pointsPerStep - Number of points in each step.
+ *      Tcl_Size **startsPtr   - Output location for the step-start array.
+ *      Tcl_Size **countsPtr   - Output location for the step-count array.
+ *      Tcl_Size *numStepsPtr  - Output location for the number of steps.
+ *
+ * Results:
+ *      Returns TCL_OK if the fixed step arrays are built successfully.
+ *      Returns TCL_ERROR if pointsPerStep is invalid, totalPoints is not divisible by it, or allocation would overflow.
+ *
+ * Side Effects:
+ *      Allocates step-start and step-count arrays owned by the caller.
+ *      Stores the arrays and step count in the output locations.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Each generated step has exactly pointsPerStep points.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceBuildFixedSteps(Tcl_Interp *interp, Tcl_Size totalPoints, Tcl_Size pointsPerStep,
+                                     Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr) {
+    Tcl_Size numSteps;
+    Tcl_Size *starts;
+    Tcl_Size *counts;
+    if (pointsPerStep <= 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice per-step point count", -1));
+        return TCL_ERROR;
+    }
+    if (totalPoints % pointsPerStep != 0) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice stepped data is not divisible by declared point count", -1));
+        return TCL_ERROR;
+    }
+    numSteps = totalPoints / pointsPerStep;
+    if ((size_t)numSteps > SIZE_MAX / sizeof(Tcl_Size)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice fixed step array overflow", -1));
+        return TCL_ERROR;
+    }
+    starts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
+    counts = (Tcl_Size *)Tcl_Alloc(sizeof(Tcl_Size) * (size_t)numSteps);
+    for (Tcl_Size i = 0; i < numSteps; i++) {
+        starts[i] = i * pointsPerStep;
+        counts[i] = pointsPerStep;
+    }
+    *startsPtr = starts;
+    *countsPtr = counts;
+    *numStepsPtr = numSteps;
+    return TCL_OK;
+}
+
+//***  RawLtspiceIsTransientPlot function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceIsTransientPlot --
+ *
+ *      Checks whether a parsed LTspice plot should be treated as transient data.
+ *
+ * Parameters:
+ *      const RawHeader *h - Header to inspect.
+ *
+ * Results:
+ *      Returns non-zero if the plot appears to be transient; zero otherwise.
+ *
+ * Side Effects:
  *      None.
  *
- * Side Effects:
- *      Closes the file channel if open.
- *      Releases the encoding handle if present.
- *      Frees all plots, the plot array, and the RawFile structure itself.
- *
  * Notes:
- *      Registered as the Tcl command delete callback for the raw-file handle.
- *      Tcl_Close() is called with a NULL interpreter because this is cleanup code.
- *      After this function returns, the RawFile pointer is invalid.
+ *      A plot is treated as transient if its Plotname contains "Transient" or its first variable is named "time".
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static void RawFileDeleteProc(void *clientData) {
-    RawFile *rf = (RawFile *)clientData;
-    if (rf->chan) {
-        Tcl_Close(NULL, rf->chan);
-        rf->chan = NULL;
+static int RawLtspiceIsTransientPlot(const RawHeader *h) {
+    if (h->plotname && strstr(h->plotname, "Transient") != NULL) {
+        return 1;
     }
-    if (rf->enc) {
-        Tcl_FreeEncoding(rf->enc);
-        rf->enc = NULL;
+    if (h->numVariables > 0 && h->variables && h->variables[0].name && strcmp(h->variables[0].name, "time") == 0) {
+        return 1;
     }
-    for (Tcl_Size i = 0; i < rf->numPlots; i++) {
-        RawPlotFree(&rf->plots[i]);
+    return 0;
+}
+
+//***  RawLtspiceAppendSegmentPlots function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceAppendSegmentPlots --
+ *
+ *      Appends binary LTspice step segments as separate pseudo-plots.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      RawFile *rf        - Raw file handle whose plot array is extended.
+ *      RawPlot *basePlot  - Physical LTspice plot being split.
+ *      Tcl_Size *starts   - Step-start point indexes.
+ *      Tcl_Size *counts   - Point count for each step.
+ *      Tcl_Size numSteps  - Number of step entries.
+ *
+ * Results:
+ *      Returns TCL_OK if all non-empty step plots are appended successfully.
+ *      Returns TCL_ERROR if header cloning, byte-count calculation, or plot append fails.
+ *
+ * Side Effects:
+ *      Clones basePlot->header for each appended step plot.
+ *      Appends new DATA_BINARY plots to rf.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The appended plots reference byte ranges inside the original binary data block.
+ *      Empty step entries are skipped.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceAppendSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size *starts,
+                                        Tcl_Size *counts, Tcl_Size numSteps) {
+    RawHeader *h = &basePlot->header;
+    for (Tcl_Size i = 0; i < numSteps; i++) {
+        RawPlot stepPlot;
+        Tcl_Size dataBytes;
+        Tcl_WideInt byteOffset;
+        if (counts[i] <= 0) {
+            continue;
+        }
+        RawPlotInit(&stepPlot);
+        if (RawHeaderClone(interp, &stepPlot.header, h) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+        if (RawMulSize(interp, counts[i], h->pointStrideBytes, "LTspice step byte count overflow", &dataBytes) !=
+            TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+        byteOffset = (Tcl_WideInt)starts[i] * (Tcl_WideInt)h->pointStrideBytes;
+        stepPlot.header.numPoints = counts[i];
+        stepPlot.header.haveNumPoints = 1;
+        stepPlot.dataKind = DATA_BINARY;
+        stepPlot.dataOffset = basePlot->dataOffset + byteOffset;
+        stepPlot.dataBytes = dataBytes;
+        stepPlot.nextOffset = stepPlot.dataOffset + (Tcl_WideInt)dataBytes;
+        if (RawFileAppendPlotMove(interp, rf, &stepPlot) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
     }
-    if (rf->plots) {
-        Tcl_Free((char *)rf->plots);
+    return TCL_OK;
+}
+
+//***  RawLtspiceAppendSplitBinaryPlots function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceAppendSplitBinaryPlots --
+ *
+ *      Appends an LTspice binary plot, splitting stepped data into pseudo-plots when needed.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      RawFile *rf              - Raw file handle whose plot array is extended.
+ *      RawPlot *basePlot        - Prepared LTspice binary plot to append or split.
+ *      Tcl_Size declaredPoints  - Original No. Points value from the raw header.
+ *
+ * Results:
+ *      Returns TCL_OK if the plot or split step plots are appended successfully.
+ *      Returns TCL_ERROR if step detection or plot append fails.
+ *
+ * Side Effects:
+ *      May move basePlot into rf for non-stepped data.
+ *      May append multiple DATA_BINARY pseudo-plots for stepped data.
+ *      Allocates and frees temporary step-boundary arrays.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Non-transient stepped data is split by declared point count when possible.
+ *      Transient data, or ambiguous stepped data, is split by axis reset detection.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceAppendSplitBinaryPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                            Tcl_Size declaredPoints) {
+    RawHeader *h = &basePlot->header;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    Tcl_Size numSteps = 0;
+    int r;
+    if (!(h->flagsMask & RAW_FLAG_STEPPED)) {
+        return RawFileAppendPlotMove(interp, rf, basePlot);
     }
-    Tcl_Free((char *)rf);
+    if (!RawLtspiceIsTransientPlot(h) && declaredPoints > 0 && h->numPoints > declaredPoints &&
+        h->numPoints % declaredPoints == 0) {
+        r = RawLtspiceBuildFixedSteps(interp, h->numPoints, declaredPoints, &starts, &counts, &numSteps);
+    } else {
+        r = RawLtspiceFindAxisResetSteps(interp, rf->chan, basePlot, RawLtspiceIsTransientPlot(h), &starts, &counts,
+                                         &numSteps);
+    }
+    if (r != TCL_OK) {
+        return TCL_ERROR;
+    }
+    r = RawLtspiceAppendSegmentPlots(interp, rf, basePlot, starts, counts, numSteps);
+    Tcl_Free((char *)starts);
+    Tcl_Free((char *)counts);
+    return r;
+}
+
+//** LTspice ASCII stepped plot splitting
+//***  RawAsciiFindNextContentLine function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawAsciiFindNextContentLine --
+ *
+ *      Finds the next non-blank ASCII Values line or the start of the next raw header.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp      - Interpreter used for error reporting.
+ *      Tcl_Channel chan        - Channel positioned inside an ASCII Values block.
+ *      EncKind kind            - Detected raw header/text encoding kind.
+ *      Tcl_Encoding enc        - Encoding handle used to decode lines.
+ *      Tcl_WideInt *offsetPtr  - Output location for the found line offset.
+ *      int *headerPtr          - Output flag; non-zero if the found line starts a new header.
+ *      int *eofPtr             - Output flag; non-zero if EOF is reached.
+ *
+ * Results:
+ *      Returns TCL_OK if a content line, header line, or EOF is found.
+ *      Returns TCL_ERROR if the current offset cannot be read, line reading fails, or seeking back fails.
+ *
+ * Side Effects:
+ *      Reads and skips blank lines from chan.
+ *      Restores chan to the found non-blank line offset.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      A line starting with "Title:" is treated as the beginning of the next raw header.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawAsciiFindNextContentLine(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                       Tcl_WideInt *offsetPtr, int *headerPtr, int *eofPtr) {
+    for (;;) {
+        Tcl_WideInt offset;
+        Tcl_DString lineDs;
+        const char *line;
+        int r;
+        offset = Tcl_Tell(chan);
+        if (offset < 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to get ASCII raw line offset", -1));
+            return TCL_ERROR;
+        }
+        r = ReadDecodedHeaderLine(interp, chan, kind, enc, &lineDs);
+        if (r == RAW_HEADER_EOF) {
+            *eofPtr = 1;
+            *headerPtr = 0;
+            *offsetPtr = Tcl_Tell(chan);
+            return TCL_OK;
+        }
+        if (r == RAW_HEADER_ERROR) {
+            return TCL_ERROR;
+        }
+        line = Tcl_DStringValue(&lineDs);
+        /*
+         * Blank lines between ASCII points are not meaningful.  Consume them
+         * while searching for the next point or the next header.
+         */
+        if (*line == '\0') {
+            Tcl_DStringFree(&lineDs);
+            continue;
+        }
+        *headerPtr = StartsWith(line, "Title:");
+        *eofPtr = 0;
+        *offsetPtr = offset;
+        Tcl_DStringFree(&lineDs);
+        if (Tcl_Seek(chan, offset, SEEK_SET) < 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to restore ASCII raw line offset", -1));
+            return TCL_ERROR;
+        }
+        return TCL_OK;
+    }
+}
+
+//***  RawAsciiAxisObjToDouble function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawAsciiAxisObjToDouble --
+ *
+ *      Converts an ASCII axis value object to a scalar double.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp  - Interpreter used for numeric conversion and error reporting.
+ *      Tcl_Obj *valueObj   - Parsed ASCII value object.
+ *      double *axisPtr     - Output location for the scalar axis value.
+ *
+ * Results:
+ *      Returns TCL_OK if the axis value is converted successfully.
+ *      Returns TCL_ERROR if numeric conversion fails.
+ *
+ * Side Effects:
+ *      Stores the converted value in *axisPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Complex values are represented as {real imag}; only the real component is used.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawAsciiAxisObjToDouble(Tcl_Interp *interp, Tcl_Obj *valueObj, double *axisPtr) {
+    Tcl_Size objc;
+    Tcl_Obj **objv;
+    /*
+     * Complex ASCII values are represented by this reader as a two-element list
+     * {real imag}.  For frequency/axis splitting, use the real component.
+     */
+    if (Tcl_ListObjGetElements(NULL, valueObj, &objc, &objv) == TCL_OK && objc == 2) {
+        return Tcl_GetDoubleFromObj(interp, objv[0], axisPtr);
+    }
+    return Tcl_GetDoubleFromObj(interp, valueObj, axisPtr);
+}
+
+//***  RawAsciiReadAxisAtCurrentPoint function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawAsciiReadAxisAtCurrentPoint --
+ *
+ *      Reads the axis value from the ASCII point at the current channel position.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      Tcl_Channel chan   - Channel positioned at the start of an ASCII point.
+ *      EncKind kind       - Detected raw header/text encoding kind.
+ *      Tcl_Encoding enc   - Encoding handle used to decode lines.
+ *      RawHeader *h       - Header describing the point layout.
+ *      double *axisPtr    - Output location for the decoded axis value.
+ *
+ * Results:
+ *      Returns TCL_OK if the axis value is read and converted successfully.
+ *      Returns TCL_ERROR if point reading, list extraction, or numeric conversion fails.
+ *
+ * Side Effects:
+ *      Reads one ASCII point from chan.
+ *      Stores the decoded axis value in *axisPtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Only variable index 0 is appended while the full point is consumed.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawAsciiReadAxisAtCurrentPoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                          RawHeader *h, double *axisPtr) {
+    Tcl_Obj *listObj;
+    Tcl_Size objc;
+    Tcl_Obj **objv;
+    int r;
+    listObj = Tcl_NewListObj(0, NULL);
+    Tcl_IncrRefCount(listObj);
+    r = RawAsciiReadOnePoint(interp, chan, kind, enc, h, 0, listObj, NULL);
+    if (r != TCL_OK) {
+        Tcl_DecrRefCount(listObj);
+        return TCL_ERROR;
+    }
+    if (Tcl_ListObjGetElements(interp, listObj, &objc, &objv) != TCL_OK) {
+        Tcl_DecrRefCount(listObj);
+        return TCL_ERROR;
+    }
+    if (objc != 1) {
+        Tcl_DecrRefCount(listObj);
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to extract ASCII raw axis value", -1));
+        return TCL_ERROR;
+    }
+    r = RawAsciiAxisObjToDouble(interp, objv[0], axisPtr);
+    Tcl_DecrRefCount(listObj);
+    return r;
+}
+
+//***  RawAppendAsciiScannedPoint function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawAppendAsciiScannedPoint --
+ *
+ *      Appends one scanned ASCII point offset and axis value to dynamic arrays.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp          - Interpreter used for error reporting.
+ *      Tcl_WideInt **offsetsPtr    - Address of the point-offset array.
+ *      double **axisValuesPtr      - Address of the axis-value array.
+ *      Tcl_Size *capacityPtr       - Current allocated capacity of both arrays.
+ *      Tcl_Size *numPointsPtr      - Current number of stored points.
+ *      Tcl_WideInt offset          - File offset of the scanned point.
+ *      double axisValue            - Decoded axis value for the scanned point.
+ *
+ * Results:
+ *      Returns TCL_OK if the point is appended successfully.
+ *      Returns TCL_ERROR if the arrays cannot be grown.
+ *
+ * Side Effects:
+ *      May resize *offsetsPtr and *axisValuesPtr.
+ *      Appends offset and axisValue.
+ *      Updates *capacityPtr and *numPointsPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The two arrays are kept at the same length and capacity.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawAppendAsciiScannedPoint(Tcl_Interp *interp, Tcl_WideInt **offsetsPtr, double **axisValuesPtr,
+                                      Tcl_Size *capacityPtr, Tcl_Size *numPointsPtr, Tcl_WideInt offset,
+                                      double axisValue) {
+    if (*numPointsPtr == *capacityPtr) {
+        Tcl_Size newCapacity = *capacityPtr ? *capacityPtr * 2 : 1024;
+        Tcl_WideInt *newOffsets;
+        double *newAxisValues;
+        if (newCapacity < *capacityPtr) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII raw point index capacity overflow", -1));
+            return TCL_ERROR;
+        }
+        if ((size_t)newCapacity > SIZE_MAX / sizeof(Tcl_WideInt)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII raw point offset array overflow", -1));
+            return TCL_ERROR;
+        }
+        if ((size_t)newCapacity > SIZE_MAX / sizeof(double)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("ASCII raw axis value array overflow", -1));
+            return TCL_ERROR;
+        }
+        newOffsets = (Tcl_WideInt *)Tcl_Alloc(sizeof(Tcl_WideInt) * (size_t)newCapacity);
+        newAxisValues = (double *)Tcl_Alloc(sizeof(double) * (size_t)newCapacity);
+        if (*numPointsPtr > 0) {
+            memcpy(newOffsets, *offsetsPtr, sizeof(Tcl_WideInt) * (size_t)*numPointsPtr);
+            memcpy(newAxisValues, *axisValuesPtr, sizeof(double) * (size_t)*numPointsPtr);
+        }
+        if (*offsetsPtr) {
+            Tcl_Free((char *)*offsetsPtr);
+        }
+        if (*axisValuesPtr) {
+            Tcl_Free((char *)*axisValuesPtr);
+        }
+        *offsetsPtr = newOffsets;
+        *axisValuesPtr = newAxisValues;
+        *capacityPtr = newCapacity;
+    }
+    (*offsetsPtr)[*numPointsPtr] = offset;
+    (*axisValuesPtr)[*numPointsPtr] = axisValue;
+    (*numPointsPtr)++;
+    return TCL_OK;
+}
+
+//***  RawLtspiceScanAllAsciiValues function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceScanAllAsciiValues --
+ *
+ *      Scans an LTspice ASCII Values block and records every point offset and axis value.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp      - Interpreter used for error reporting.
+ *      Tcl_Channel chan        - Channel positioned inside the ASCII Values block.
+ *      EncKind kind            - Detected raw header/text encoding kind.
+ *      Tcl_Encoding enc        - Encoding handle used to decode lines.
+ *      RawPlot *plot           - Plot whose point-offset index and data bounds are updated.
+ *      double **axisValuesPtr  - Output location for the scanned axis-value array.
+ *
+ * Results:
+ *      Returns TCL_OK if the ASCII Values block is scanned successfully.
+ *      Returns TCL_ERROR if line scanning, seeking, axis reading, or allocation fails.
+ *
+ * Side Effects:
+ *      Reads and seeks in chan.
+ *      Allocates plot->pointOffsets and the axis-value array.
+ *      Updates plot->numPointOffsets, plot->header.numPoints, plot->nextOffset, and plot->dataBytes.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Scanning stops at EOF or at the next line starting with "Title:".
+ *      The returned axis-value array is owned by the caller and must be freed with Tcl_Free().
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceScanAllAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                        RawPlot *plot, double **axisValuesPtr) {
+    RawHeader *h = &plot->header;
+    Tcl_WideInt *offsets = NULL;
+    double *axisValues = NULL;
+    Tcl_Size capacity = 0;
+    Tcl_Size numPoints = 0;
+    Tcl_WideInt endOffset;
+    for (;;) {
+        Tcl_WideInt pointOffset;
+        double axisValue;
+        int isHeader;
+        int isEof;
+        if (RawAsciiFindNextContentLine(interp, chan, kind, enc, &pointOffset, &isHeader, &isEof) != TCL_OK) {
+            if (offsets) {
+                Tcl_Free((char *)offsets);
+            }
+            if (axisValues) {
+                Tcl_Free((char *)axisValues);
+            }
+            return TCL_ERROR;
+        }
+        if (isEof) {
+            endOffset = pointOffset;
+            break;
+        }
+        if (isHeader) {
+            /*
+             * RawAsciiFindNextContentLine() has already restored the channel
+             * to the beginning of the header line.
+             */
+            endOffset = pointOffset;
+            break;
+        }
+        if (Tcl_Seek(chan, pointOffset, SEEK_SET) < 0) {
+            if (offsets) {
+                Tcl_Free((char *)offsets);
+            }
+            if (axisValues) {
+                Tcl_Free((char *)axisValues);
+            }
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to ASCII raw point", -1));
+            return TCL_ERROR;
+        }
+        if (RawAsciiReadAxisAtCurrentPoint(interp, chan, kind, enc, h, &axisValue) != TCL_OK) {
+            if (offsets) {
+                Tcl_Free((char *)offsets);
+            }
+            if (axisValues) {
+                Tcl_Free((char *)axisValues);
+            }
+            return TCL_ERROR;
+        }
+        if (RawAppendAsciiScannedPoint(interp, &offsets, &axisValues, &capacity, &numPoints, pointOffset, axisValue) !=
+            TCL_OK) {
+            if (offsets) {
+                Tcl_Free((char *)offsets);
+            }
+            if (axisValues) {
+                Tcl_Free((char *)axisValues);
+            }
+            return TCL_ERROR;
+        }
+    }
+    if (endOffset < plot->dataOffset) {
+        if (offsets) {
+            Tcl_Free((char *)offsets);
+        }
+        if (axisValues) {
+            Tcl_Free((char *)axisValues);
+        }
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice ASCII raw data offsets", -1));
+        return TCL_ERROR;
+    }
+    if ((Tcl_WideInt)(Tcl_Size)(endOffset - plot->dataOffset) != endOffset - plot->dataOffset) {
+        if (offsets) {
+            Tcl_Free((char *)offsets);
+        }
+        if (axisValues) {
+            Tcl_Free((char *)axisValues);
+        }
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice ASCII raw data byte count overflow", -1));
+        return TCL_ERROR;
+    }
+    plot->pointOffsets = offsets;
+    plot->numPointOffsets = numPoints;
+    plot->header.numPoints = numPoints;
+    plot->header.haveNumPoints = 1;
+    plot->nextOffset = endOffset;
+    plot->dataBytes = (Tcl_Size)(endOffset - plot->dataOffset);
+    *axisValuesPtr = axisValues;
+    return TCL_OK;
+}
+
+//***  RawLtspiceBuildAxisResetStepsFromValues function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceBuildAxisResetStepsFromValues --
+ *
+ *      Builds LTspice step boundaries from scanned ASCII axis values.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp        - Interpreter used for error reporting.
+ *      const double *axisValues  - Array of scanned axis values.
+ *      Tcl_Size totalPoints      - Number of scanned points.
+ *      int transientMode         - Non-zero to use transient time-reset detection.
+ *      Tcl_Size **startsPtr      - Output location for the step-start array.
+ *      Tcl_Size **countsPtr      - Output location for the step-count array.
+ *      Tcl_Size *numStepsPtr     - Output location for the number of detected steps.
+ *
+ * Results:
+ *      Returns TCL_OK if the step arrays are built successfully.
+ *      Returns TCL_ERROR if allocation fails.
+ *
+ * Side Effects:
+ *      Allocates step-start and step-count arrays owned by the caller.
+ *      Stores the arrays and step count in the output locations.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The first point is always treated as the start of the first step.
+ *      In transient mode, a new step is detected when the axis value is less than or equal to the previous value.
+ *      In non-transient mode, sweep direction is detected and reset detection is direction-aware.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceBuildAxisResetStepsFromValues(Tcl_Interp *interp, const double *axisValues, Tcl_Size totalPoints,
+                                                   int transientMode, Tcl_Size **startsPtr, Tcl_Size **countsPtr,
+                                                   Tcl_Size *numStepsPtr) {
+    RawAxisDirection direction = RAW_AXIS_DIRECTION_UNKNOWN;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    Tcl_Size capacity = 0;
+    Tcl_Size numSteps = 0;
+    if (totalPoints <= 0) {
+        *startsPtr = NULL;
+        *countsPtr = NULL;
+        *numStepsPtr = 0;
+        return TCL_OK;
+    }
+    if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, 0) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    for (Tcl_Size i = 1; i < totalPoints; i++) {
+        if (transientMode ? (axisValues[i] <= axisValues[i - 1])
+                          : RawAxisStartsNewStep(axisValues[i - 1], axisValues[i], &direction)) {
+            counts[numSteps - 1] = i - starts[numSteps - 1];
+            if (RawAppendStepBoundary(interp, &starts, &counts, &capacity, &numSteps, i) != TCL_OK) {
+                Tcl_Free((char *)starts);
+                Tcl_Free((char *)counts);
+                return TCL_ERROR;
+            }
+            direction = RAW_AXIS_DIRECTION_UNKNOWN;
+        }
+    }
+    counts[numSteps - 1] = totalPoints - starts[numSteps - 1];
+    *startsPtr = starts;
+    *countsPtr = counts;
+    *numStepsPtr = numSteps;
+    return TCL_OK;
+}
+
+//***  RawLtspiceAppendAsciiSegmentPlots function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceAppendAsciiSegmentPlots --
+ *
+ *      Appends ASCII LTspice step segments as separate pseudo-plots.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp           - Interpreter used for error reporting.
+ *      RawFile *rf                  - Raw file handle whose plot array is extended.
+ *      RawPlot *basePlot            - Physical LTspice ASCII plot being split.
+ *      Tcl_WideInt *allPointOffsets - Point-offset array for the full physical Values block.
+ *      Tcl_Size totalPoints         - Total number of points in allPointOffsets.
+ *      Tcl_Size *starts             - Step-start point indexes.
+ *      Tcl_Size *counts             - Point count for each step.
+ *      Tcl_Size numSteps            - Number of step entries.
+ *
+ * Results:
+ *      Returns TCL_OK if all non-empty step plots are appended successfully.
+ *      Returns TCL_ERROR if header cloning, point-offset allocation, offset calculation, or plot append fails.
+ *
+ * Side Effects:
+ *      Clones basePlot->header for each appended step plot.
+ *      Allocates a per-step point-offset array for each appended plot.
+ *      Appends new DATA_VALUES plots to rf.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The appended plots reference line offsets inside the original ASCII Values block.
+ *      Empty step entries are skipped.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceAppendAsciiSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                             Tcl_WideInt *allPointOffsets, Tcl_Size totalPoints, Tcl_Size *starts,
+                                             Tcl_Size *counts, Tcl_Size numSteps) {
+    for (Tcl_Size i = 0; i < numSteps; i++) {
+        RawPlot stepPlot;
+        Tcl_WideInt nextOffset;
+        Tcl_WideInt dataBytesWide;
+        if (counts[i] <= 0) {
+            continue;
+        }
+        RawPlotInit(&stepPlot);
+        if (RawHeaderClone(interp, &stepPlot.header, &basePlot->header) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+        stepPlot.header.numPoints = counts[i];
+        stepPlot.header.haveNumPoints = 1;
+        stepPlot.dataKind = DATA_VALUES;
+        if ((size_t)counts[i] > SIZE_MAX / sizeof(Tcl_WideInt)) {
+            RawPlotFree(&stepPlot);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice ASCII point offset array overflow", -1));
+            return TCL_ERROR;
+        }
+        stepPlot.pointOffsets = (Tcl_WideInt *)Tcl_Alloc(sizeof(Tcl_WideInt) * (size_t)counts[i]);
+        stepPlot.numPointOffsets = counts[i];
+        for (Tcl_Size point = 0; point < counts[i]; point++) {
+            stepPlot.pointOffsets[point] = allPointOffsets[starts[i] + point];
+        }
+        stepPlot.dataOffset = stepPlot.pointOffsets[0];
+        if (starts[i] + counts[i] < totalPoints) {
+            nextOffset = allPointOffsets[starts[i] + counts[i]];
+        } else {
+            nextOffset = basePlot->nextOffset;
+        }
+        if (nextOffset < stepPlot.dataOffset) {
+            RawPlotFree(&stepPlot);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid LTspice ASCII step offsets", -1));
+            return TCL_ERROR;
+        }
+        dataBytesWide = nextOffset - stepPlot.dataOffset;
+        if ((Tcl_WideInt)(Tcl_Size)dataBytesWide != dataBytesWide) {
+            RawPlotFree(&stepPlot);
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("LTspice ASCII step byte count overflow", -1));
+            return TCL_ERROR;
+        }
+        stepPlot.nextOffset = nextOffset;
+        stepPlot.dataBytes = (Tcl_Size)dataBytesWide;
+        if (RawFileAppendPlotMove(interp, rf, &stepPlot) != TCL_OK) {
+            RawPlotFree(&stepPlot);
+            return TCL_ERROR;
+        }
+    }
+    return TCL_OK;
+}
+
+//***  RawLtspiceAppendSplitAsciiPlots function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawLtspiceAppendSplitAsciiPlots --
+ *
+ *      Appends an LTspice ASCII plot, splitting stepped data into pseudo-plots when needed.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      RawFile *rf              - Raw file handle whose plot array is extended.
+ *      RawPlot *basePlot        - LTspice ASCII plot to append or split.
+ *      Tcl_Size declaredPoints  - Original No. Points value from the raw header.
+ *
+ * Results:
+ *      Returns TCL_OK if the plot or split step plots are appended successfully.
+ *      Returns TCL_ERROR if ASCII scanning, step detection, or plot append fails.
+ *
+ * Side Effects:
+ *      Scans the full ASCII Values block and updates basePlot.
+ *      May move basePlot into rf for non-stepped or empty data.
+ *      May append multiple DATA_VALUES pseudo-plots for stepped data.
+ *      Allocates and frees temporary axis-value and step-boundary arrays.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Non-transient stepped data is split by declared point count when possible.
+ *      Transient data, or ambiguous stepped data, is split by axis reset detection.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                           Tcl_Size declaredPoints) {
+    RawHeader *h = &basePlot->header;
+    double *axisValues = NULL;
+    Tcl_Size *starts = NULL;
+    Tcl_Size *counts = NULL;
+    Tcl_Size numSteps = 0;
+    Tcl_Size totalPoints;
+    int r;
+    if (RawLtspiceScanAllAsciiValues(interp, rf->chan, rf->encKind, rf->enc, basePlot, &axisValues) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    totalPoints = basePlot->header.numPoints;
+    if (!(h->flagsMask & RAW_FLAG_STEPPED)) {
+        if (axisValues) {
+            Tcl_Free((char *)axisValues);
+        }
+        return RawFileAppendPlotMove(interp, rf, basePlot);
+    }
+    if (totalPoints == 0) {
+        if (axisValues) {
+            Tcl_Free((char *)axisValues);
+        }
+        return RawFileAppendPlotMove(interp, rf, basePlot);
+    }
+    /*
+     * For LTspice non-transient stepped sweeps, prefer fixed-size split by
+     * declared No. Points when it divides the physical ASCII block cleanly.
+     *
+     * For transient, split by the x-axis/time reset, as requested.
+     */
+    if (!RawLtspiceIsTransientPlot(h) && declaredPoints > 0 && totalPoints > declaredPoints &&
+        totalPoints % declaredPoints == 0) {
+        r = RawLtspiceBuildFixedSteps(interp, totalPoints, declaredPoints, &starts, &counts, &numSteps);
+    } else {
+        r = RawLtspiceBuildAxisResetStepsFromValues(interp, axisValues, totalPoints, RawLtspiceIsTransientPlot(h),
+                                                    &starts, &counts, &numSteps);
+    }
+    if (axisValues) {
+        Tcl_Free((char *)axisValues);
+    }
+    if (r != TCL_OK) {
+        return TCL_ERROR;
+    }
+    r = RawLtspiceAppendAsciiSegmentPlots(interp, rf, basePlot, basePlot->pointOffsets, totalPoints, starts, counts,
+                                          numSteps);
+    if (starts) {
+        Tcl_Free((char *)starts);
+    }
+    if (counts) {
+        Tcl_Free((char *)counts);
+    }
+    return r;
+}
+
+//** Tcl command argument parsing
+//***  RawParseOpenArgs function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawParseOpenArgs --
+ *
+ *      Parses arguments for the openraw command.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp        - Interpreter used for error reporting.
+ *      Tcl_Size objc             - Number of command arguments.
+ *      Tcl_Obj *const objv[]     - Command argument objects.
+ *      RawDialect *dialectPtr    - Output location for the selected raw-file dialect.
+ *      Tcl_Obj **fileNameObjPtr  - Output location for the file name object.
+ *
+ * Results:
+ *      Returns TCL_OK if the arguments are parsed successfully.
+ *      Returns TCL_ERROR if the argument count is invalid or the dialect name is unknown.
+ *
+ * Side Effects:
+ *      Stores the selected dialect in *dialectPtr.
+ *      Stores the file name object in *fileNameObjPtr.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      If -dialect is omitted, RAW_DIALECT_GENERIC is used.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
+                            Tcl_Obj **fileNameObjPtr) {
+    RawDialect dialect = RAW_DIALECT_GENERIC;
+    Tcl_Obj *fileNameObj = NULL;
+    if (objc == 2) {
+        fileNameObj = objv[1];
+    } else if (objc == 4 && strcmp(Tcl_GetString(objv[1]), "-dialect") == 0) {
+        const char *dialectName = Tcl_GetString(objv[2]);
+        if (strcmp(dialectName, "generic") == 0) {
+            dialect = RAW_DIALECT_GENERIC;
+        } else if (strcmp(dialectName, "ltspice") == 0) {
+            dialect = RAW_DIALECT_LTSPICE;
+        } else {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", dialectName));
+            return TCL_ERROR;
+        }
+        fileNameObj = objv[3];
+    } else {
+        Tcl_WrongNumArgs(interp, 1, objv, "?-dialect generic|ltspice? fileName");
+        return TCL_ERROR;
+    }
+    *dialectPtr = dialect;
+    *fileNameObjPtr = fileNameObj;
+    return TCL_OK;
 }
 
 //***  RawParsePlotIndex function
@@ -3436,73 +4560,7 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
     return TCL_OK;
 }
 
-//***  RawPlotFindVariable function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawPlotFindVariable --
- *
- *      Finds a variable by name in a RawPlot.
- *
- * Parameters:
- *      Tcl_Interp *interp - Interpreter used for error reporting.
- *      RawPlot *plot      - Plot whose variable table is searched.
- *      const char *name   - NUL-terminated variable name to find.
- *      Tcl_Size *indexPtr - Output matching variable array index.
- *
- * Results:
- *      Returns TCL_OK if a matching variable is found; TCL_ERROR otherwise.
- *
- * Side Effects:
- *      Writes the matching index to *indexPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Comparison is byte-wise and case-sensitive.
- *      The returned index is the array position in h->variables[].
- *      If duplicate names exist, the first match is returned.
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr) {
-    RawHeader *h = &plot->header;
-    for (Tcl_Size i = 0; i < h->numVariables; i++) {
-        const char *varName = h->variables[i].name;
-        if (varName && strcmp(varName, name) == 0) {
-            *indexPtr = i;
-            return TCL_OK;
-        }
-    }
-    Tcl_SetObjResult(interp, Tcl_ObjPrintf("raw vector \"%s\" not found", name));
-    return TCL_ERROR;
-}
-
-static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr) {
-    RawDialect dialect = RAW_DIALECT_GENERIC;
-    Tcl_Obj *fileNameObj = NULL;
-    if (objc == 2) {
-        fileNameObj = objv[1];
-    } else if (objc == 4 && strcmp(Tcl_GetString(objv[1]), "-dialect") == 0) {
-        const char *dialectName = Tcl_GetString(objv[2]);
-        if (strcmp(dialectName, "generic") == 0) {
-            dialect = RAW_DIALECT_GENERIC;
-        } else if (strcmp(dialectName, "ltspice") == 0) {
-            dialect = RAW_DIALECT_LTSPICE;
-        } else {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", dialectName));
-            return TCL_ERROR;
-        }
-        fileNameObj = objv[3];
-    } else {
-        Tcl_WrongNumArgs(interp, 1, objv, "?-dialect generic|ltspice? fileName");
-        return TCL_ERROR;
-    }
-    *dialectPtr = dialect;
-    *fileNameObjPtr = fileNameObj;
-    return TCL_OK;
-}
-
+//** Tcl command implementations
 //***  RawFileObjCmd function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -3750,7 +4808,6 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *----------------------------------------------------------------------------------------------------------------------
  */
 static Tcl_Size rawHandleCounter = 0;
-
 static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
     Tcl_Channel chan;
     EncKind encKind;
@@ -3871,13 +4928,30 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
                 return TCL_ERROR;
             }
         } else if (dataKind == DATA_VALUES) {
+            Tcl_Size declaredPoints;
             /*
-             * ASCII Values: uses token parsing and does not need LTspice mixed binary layout.
+             * ASCII values are textual, so LTspice's binary mixed float/double layout
+             * does not apply.  We only need real vs complex parsing here.
              */
             if (RawHeaderResolveVariableLayout(interp, &plot.header, RAW_DIALECT_GENERIC, 0) != TCL_OK) {
                 RawPlotFree(&plot);
                 RawFileDeleteProc(rf);
                 return TCL_ERROR;
+            }
+            declaredPoints = plot.header.haveNumPoints ? plot.header.numPoints : 0;
+            if (dialect == RAW_DIALECT_LTSPICE && (plot.header.flagsMask & RAW_FLAG_STEPPED)) {
+                if (RawLtspiceAppendSplitAsciiPlots(interp, rf, &plot, declaredPoints) != TCL_OK) {
+                    RawPlotFree(&plot);
+                    RawFileDeleteProc(rf);
+                    return TCL_ERROR;
+                }
+                /*
+                 * If RawLtspiceAppendSplitAsciiPlots() moved the plot, RawPlotMove()
+                 * reinitialized it.  If it cloned pseudo-plots, this frees the scanned
+                 * base plot and its physical point-offset index.
+                 */
+                RawPlotFree(&plot);
+                continue;
             }
             if (RawPlotScanAsciiValues(interp, chan, encKind, enc, &plot) != TCL_OK) {
                 RawPlotFree(&plot);

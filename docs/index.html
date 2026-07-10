@@ -15,7 +15,7 @@
     
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
-    <link rel="next" title="tclsimrawreader - read SPICE .raw file with Tcl" href="tclsimrawreader.html" /> 
+    <link rel="next" title="tclsimrawreader - read SPICE .raw files with Tcl" href="tclsimrawreader.html" /> 
   </head><body>
     <div class="related" role="navigation" aria-label="Related">
       <h3>Navigation</h3>
@@ -24,7 +24,7 @@
           <a href="genindex.html" title="General Index"
              accesskey="I">index</a></li>
         <li class="right" >
-          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw file with Tcl"
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw files with Tcl"
              accesskey="N">next</a> |</li>
         <li class="nav-item nav-item-0"><a href="#">tclsimrawreader  documentation</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">&lt;no title&gt;</a></li> 
@@ -39,7 +39,7 @@
   <div class="toctree-wrapper compound">
 <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul>
-<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader.html">tclsimrawreader - read SPICE .raw file with Tcl</a><ul>
+<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader.html">tclsimrawreader - read SPICE .raw files with Tcl</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="tclsimrawreader.html#what-it-gives-you-at-a-glance">What it gives you (at a glance)</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tclsimrawreader.html#building-requirements">Building &amp; requirements</a></li>
 <li class="toctree-l2"><a class="reference internal" href="tclsimrawreader.html#documentation">Documentation</a></li>
@@ -60,6 +60,28 @@
 </li>
 </ul>
 </li>
+<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html">Notes and internals</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#raw-file-format-support">Raw File Format Support</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#supported-raw-file-structure">Supported raw-file structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#generic-spice3-style-dialect">Generic SPICE3-style dialect</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ascii-values-data">ASCII <code class="docutils literal notranslate"><span class="pre">Values:</span></code> data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#binary-data">Binary data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#multiple-plots">Multiple plots</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-dialect">LTspice dialect</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-text-header-encoding">LTspice text/header encoding</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-ascii-values-data">LTspice ASCII <code class="docutils literal notranslate"><span class="pre">Values:</span></code> data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-binary-data">LTspice binary data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#fastaccess">FastAccess</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-stepped-plot-separation">LTspice stepped plot separation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#limitations">Limitations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
 <li class="toctree-l1"><a class="reference internal" href="genindex.html">Index</a></li>
 </ul>
 </div>
@@ -74,7 +96,7 @@
   <div>
     <h4>Next topic</h4>
     <p class="topless"><a href="tclsimrawreader.html"
-                          title="next chapter">tclsimrawreader - read SPICE .raw file with Tcl</a></p>
+                          title="next chapter">tclsimrawreader - read SPICE .raw files with Tcl</a></p>
   </div>
   <div role="note" aria-label="source link">
     <h3>This Page</h3>
@@ -104,7 +126,7 @@
           <a href="genindex.html" title="General Index"
              >index</a></li>
         <li class="right" >
-          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw file with Tcl"
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw files with Tcl"
              >next</a> |</li>
         <li class="nav-item nav-item-0"><a href="#">tclsimrawreader  documentation</a> &#187;</li>
         <li class="nav-item nav-item-this"><a href="">&lt;no title&gt;</a></li> 

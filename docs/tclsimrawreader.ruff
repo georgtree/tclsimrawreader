@@ -5,14 +5,16 @@ namespace eval ::tclsimrawreader {
         # Open channel to provided .raw file, creates subcommand, parses header(s) information from the file.
         # Every `::tclsimrawreader::openraw` returns a command (e.g. `::tclsimrawreader::s1`). The following 
         # subcommands operate on that file instance.
+        #  -dialect name - optional dialect, possible values are `generic` and `ltspice`, default is `generic`
         #  filepath - path to SPICE .raw file
         # Returns: command name to work with the file, references as `RAWFILE` later
         #
         # Example:
         #```tcl
         # set rawfile [tclsimrawreader::openraw /path/to/ac.raw]
+        # set rawfile [tclsimrawreader::openraw -dialect ltspice /path/to/ac.raw]
         #```
-        # Synopsis: filepath
+        # Synopsis: ?-dialect name? filepath
     }
 }
 

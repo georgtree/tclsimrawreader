@@ -4,6 +4,7 @@ package require fileutil
 set docDir [file dirname [file normalize [info script]]]
 set sourceDir [file join $docDir ..]
 source [file join $docDir startPage.ruff]
+source [file join $docDir notesAndInternals.ruff]
 source [file join $docDir tclsimrawreader.ruff]
 
 set packageVersion [package versions tclsimrawreader]
@@ -15,11 +16,11 @@ set commonSphinx [list -title $title -sortnamespaces false -preamble $startPage 
                     -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                     -copyright "George Yashin" {*}$::argv]
 set commonNroff [list -title $title -sortnamespaces false -preamble $startPage -pagesplit namespace -recurse false\
-                         -pagesplit none -autopunctuate true -compact false -includeprivate false\
+                         -pagesplit namespace -autopunctuate true -compact false -includeprivate false\
                          -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                          -copyright "George Yashin" {*}$::argv]
 
-set namespaces [list ::tclsimrawreader]
+set namespaces [list ::tclsimrawreader {::Notes and internals}]
 
 ruff::document $namespaces -format sphinx -outfile tclsimrawreader.rst -outdir [file join $docDir sphinx]\
         {*}$commonSphinx
@@ -56,7 +57,7 @@ foreach file [glob -directory $docDir *.n] {
     file rename $old $tmp
     file rename $tmp $new
 }
-set specialPages [list]
+set specialPages [list tclsimrawreader-notes-and-internals]
 foreach namespacePath $namespaces {
     set tails [list]
     while {$namespacePath ne {}} {
@@ -74,6 +75,8 @@ foreach namespacePath $namespaces {
 
 set linksString ".SH SEE ALSO
 tclsimrawreader(n) - package's main page
+.br
+tclsimrawreader-notes-and-internals(n) - information about implementation
 .br
 .sp 1
 Public commands documentation:

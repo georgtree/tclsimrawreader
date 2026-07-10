@@ -1,0 +1,369 @@
+'\"
+'\" '\" Copyright (c) George Yashin
+'\"
+.TH "Notes and internals" 3tcl 0\&.1 "tclsimrawreader" "Tcl NgspiceTclBridge package"
+.SH NAME
+Notes and internals - Commands in namespace Notes and internals
+.SH "NOTES AND INTERNALS"
+.SH "RAW FILE FORMAT SUPPORT"
+.PP
+This reader supports two raw-file dialects:
+.PP
+.RS 4n
+.nf
+::tclsimrawreader::openraw file\&.raw
+::tclsimrawreader::openraw -dialect generic file\&.raw
+::tclsimrawreader::openraw -dialect ltspice file\&.raw
+.fi
+.RE
+.PP
+The generic dialect is used for SPICE3-style raw files, including ngspice and Xyce\&. The ltspice dialect
+enables LTspice-specific binary layout detection and stepped-plot splitting\&.
+.SS "SUPPORTED RAW-FILE STRUCTURE"
+.PP
+A raw file is treated as a sequence of one or more plots\&. Each plot has a text header, a variable table, and a
+data block\&.
+.PP
+.RS 4n
+.nf
+Title: \&.\&.\&.
+Date: \&.\&.\&.
+Plotname: \&.\&.\&.
+Flags: real|complex [double] [stepped] \&.\&.\&.
+No\&. Variables: N
+No\&. Points: M
+Variables:
+        0       <name0>     <type0>
+        1       <name1>     <type1>
+        \&.\&.\&.
+Binary:
+<binary data>
+.fi
+.RE
+.PP
+or:
+.PP
+.RS 4n
+.nf
+Title: \&.\&.\&.
+Date: \&.\&.\&.
+Plotname: \&.\&.\&.
+Flags: real|complex [stepped] \&.\&.\&.
+No\&. Variables: N
+No\&. Points: M
+Variables:
+        0       <name0>     <type0>
+        1       <name1>     <type1>
+        \&.\&.\&.
+Values:
+        0       <value0>
+                <value1>
+                \&.\&.\&.
+        1       <value0>
+                <value1>
+                \&.\&.\&.
+.fi
+.RE
+.PP
+The reader supports both Binary: and ASCII Values: blocks\&. Xyce documents its raw-file format as closely
+following SPICE3 conventions, with Title, Date, Plotname, Flags, No\&. Variables, No\&. Points,
+Variables, and either Values or Binary sections\&.
+.SS "GENERIC SPICE3-STYLE DIALECT"
+.PP
+The generic dialect is intended for ngspice, Xyce and SPICE-OPUS raw files\&.
+.PP
+\fBASCII Values: data\fR
+.PP
+ASCII raw files store one point as an integer point index followed by the variable values for that
+point\&. Complex values are represented as real and imaginary components\&. Xyce documents this as an integer index
+preceding each set of point values, with complex values written as <real component>, <imaginary component>\&.
+.PP
+The reader scans ASCII data once at open time to build pointOffsets\&. Vector values are still read lazily later
+by seeking to the requested point offset\&.
+.PP
+\fBBinary data\fR
+.PP
+For generic binary raw files, the layout is point-major:
+.PP
+.RS 4n
+.nf
+point 0: var0 var1 var2 \&.\&.\&. varN
+point 1: var0 var1 var2 \&.\&.\&. varN
+point 2: var0 var1 var2 \&.\&.\&. varN
+\&.\&.\&.
+.fi
+.RE
+.PP
+For real data, every variable is read as a 64-bit double\&. For complex data, every variable is read as two
+64-bit doubles: real part followed by imaginary part\&. Xyce documents binary real values as sizeof(double)
+blocks and complex values as real and imaginary components of size 2*sizeof(double)\&.
+.PP
+ngspice supports both ASCII and binary raw output through its filetype setting; the documented values are ascii
+and binary, with binary being the default\&.
+.PP
+\fBMultiple plots\fR
+.PP
+Generic multi-plot files are represented as concatenated complete plots:
+.PP
+.RS 4n
+.nf
+<header for plot 0>
+<data for plot 0>
+<header for plot 1>
+<data for plot 1>
+<header for plot 2>
+<data for plot 2>
+.fi
+.RE
+.PP
+Xyce documents raw output from -r as a concatenation of plots, and -a with -r as producing an ASCII raw
+file\&.
+.PP
+The reader exposes each complete plot as a separate indexed plot:
+.PP
+.RS 4n
+.nf
+$handle plots
+$handle names -plot 0
+$handle names -plot 1
+$handle vector -plot 0 time
+.fi
+.RE
+.SS "LTSPICE DIALECT"
+.PP
+LTspice raw files use a similar header and data-section structure, but binary real-data storage is different
+from the generic SPICE3-style layout\&. LTspice’s raw format is not officially specified; an Analog Devices forum
+answer notes that the format is not officially disclosed, although it has been practically stable for many
+years\&.
+.PP
+Use:
+.PP
+.RS 4n
+.nf
+set r [::tclsimrawreader::openraw -dialect ltspice file\&.raw]
+.fi
+.RE
+.PP
+\fBLTspice text/header encoding\fR
+.PP
+The reader supports UTF-8/ASCII-style text headers and UTF-16LE headers\&. LTspice raw headers may be UTF-16LE;
+the LTspice forum answer explicitly notes that the raw-file header is in 16-bit Unicode\&.
+.PP
+\fBLTspice ASCII Values: data\fR
+.PP
+For LTspice ASCII raw files, values are parsed as text\&. The LTspice mixed float/double binary layout does not
+apply to ASCII files\&.
+.PP
+The reader supports:
+.TP
+\(bu
+LTspice ASCII single plot
+.TP
+\(bu
+LTspice ASCII stepped (multi-plot) file
+.PP
+For stepped ASCII files, the reader scans the whole physical Values: block, records point offsets and axis
+values, then exposes each detected step as a separate pseudo-plot\&.
+.PP
+\fBLTspice binary data\fR
+.PP
+LTspice binary data is also point-major in normal non-FastAccess files:
+.PP
+.RS 4n
+.nf
+point 0: axis0 trace1 trace2 \&.\&.\&. traceN
+point 1: axis1 trace1 trace2 \&.\&.\&. traceN
+\&.\&.\&.
+.fi
+.RE
+.PP
+For transient analysis, LTspice stores the time variable as a 64-bit double and the dependent traces as 32-bit
+floats by default\&. If double precision is forced with \&.options numdgt > 6, the dependent traces are stored as
+doubles as well\&.
+.PP
+The reader detects LTspice real-data storage from the physical data-block size:
+.PP
+.RS 4n
+.nf
+mixed layout:
+    variable 0: double
+    variables 1\&.\&.N: float
+
+all-double layout:
+    variables 0\&.\&.N: double
+.fi
+.RE
+.PP
+For AC analysis, LTspice binary data is treated as complex data, with each value stored as a pair of doubles:
+real part and imaginary part\&. Public LTspice raw-format notes describe AC binary data as complex values made
+from two 8-byte components\&.
+.PP
+\fBFastAccess\fR
+.PP
+LTspice FastAccess changes the storage order from point-major to variable-major:
+.PP
+.RS 4n
+.nf
+normal:
+    point0 var0 var1 var2 \&.\&.\&.
+    point1 var0 var1 var2 \&.\&.\&.
+
+FastAccess:
+    var0 point0 point1 point2 \&.\&.\&.
+    var1 point0 point1 point2 \&.\&.\&.
+.fi
+.RE
+.PP
+FastAccess is marked in the Flags: line\&. The current implementation rejects LTspice FastAccess files instead
+of silently reading them incorrectly\&. Public documentation describes FastAccess as storing each variable
+contiguously rather than storing complete points contiguously\&.
+.PP
+\fBLTspice stepped plot separation\fR
+.PP
+LTspice stepped raw files are normalized into indexed plots by this reader\&. The \&.log file is not read\&. Step
+parameter names and values are not reconstructed\&. The goal is only to expose each step as a normal plot so the
+existing API stays consistent\&.
+.PP
+After opening a stepped LTspice file:
+.PP
+.RS 4n
+.nf
+set r [::tclsimrawreader::openraw -dialect ltspice stepped\&.raw]
+
+$r plots
+$r vector -plot 0 time
+$r vector -plot 1 time
+$r vectors -plot 2 -all
+.fi
+.RE
+.PP
+each step is available as a separate plot index\&.
+.PP
+\fBTransient stepped data\fR
+.PP
+For transient data, LTspice steps are detected from the axis variable, normally time\&.
+.PP
+A new plot is started when the axis stops increasing:
+.PP
+.RS 4n
+.nf
+if current_time <= previous_time:
+    start new step
+.fi
+.RE
+.PP
+This works because each transient step starts its own time sequence again\&.
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+physical LTspice data block:
+
+step 0:
+    time = 0
+    time = 1e-6
+    time = 2e-6
+
+step 1:
+    time = 0        <-- reset detected here
+    time = 1e-6
+    time = 2e-6
+
+step 2:
+    time = 0        <-- reset detected here
+    time = 1e-6
+    time = 2e-6
+.fi
+.RE
+.PP
+The reader exposes this as:
+.PP
+.RS 4n
+.nf
+plot 0: step 0 points
+plot 1: step 1 points
+plot 2: step 2 points
+.fi
+.RE
+.PP
+The same rule is used for binary and ASCII LTspice transient files\&.
+.PP
+\fBNon-transient stepped data\fR
+.PP
+For non-transient stepped data, such as DC sweeps, AC sweeps, or parameter sweeps, the preferred split method
+is fixed-size segmentation using the declared No\&. Points value when it cleanly divides the physical data
+block\&.
+.PP
+.RS 4n
+.nf
+if total_physical_points % declared_points == 0:
+    points_per_step = declared_points
+    number_of_steps = total_physical_points / declared_points
+.fi
+.RE
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+No\&. Points: 101
+physical points: 303
+
+plot 0: points   0\&.\&.100
+plot 1: points 101\&.\&.201
+plot 2: points 202\&.\&.302
+.fi
+.RE
+.PP
+If fixed-size splitting is not applicable, the reader may fall back to axis-reset detection\&. In this case, the
+axis direction must be detected first\&.
+.PP
+For an increasing sweep, a new step starts when the axis value stops increasing:
+.PP
+.RS 4n
+.nf
+if current_axis <= previous_axis:
+    start new step
+.fi
+.RE
+.PP
+For a decreasing sweep, a new step starts when the axis value stops decreasing:
+.PP
+.RS 4n
+.nf
+if current_axis >= previous_axis:
+    start new step
+.fi
+.RE
+.PP
+For AC data, the real component of the first variable is used as the scalar axis value\&.
+.PP
+The fixed-size split is preferred for non-transient LTspice stepped data because it does not depend on sweep
+direction or axis monotonicity assumptions\&.
+.PP
+\fBExposed API behavior\fR
+.PP
+The public API does not expose whether a plot came from a physical plot header or from an LTspice stepped
+pseudo-plot\&.
+.PP
+\fBLimitations\fR
+.PP
+The current implementation does not read LTspice \&.log files\&. Therefore, LTspice step parameter names and
+values are not available\&.
+.PP
+LTspice FastAccess files are not supported\&.
+.PP
+The LTspice dialect is based on observed and publicly described LTspice raw-file behavior rather than an
+official file-format specification\&.
+
+
+.SH SEE ALSO
+tclsimrawreader(n) - package's main page
+.br
+tclsimrawreader-notes-and-internals(n) - information about implementation
+.br
+.sp 1
+Public commands documentation:
+.br
+tclsimrawreader-tclsimrawreader(n)

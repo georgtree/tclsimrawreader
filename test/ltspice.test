@@ -91,7 +91,7 @@ transfer characteristic} nvariables 12 npoints 51 dataoffset 1202 databytes 2652
     unset r
 }
 
-test testDCBinaryMultiPlot-11 {read all vector values from the certain plot in range, multiplot binary raw file}\
+test testDCBinarySinglePlot-7 {read all vector values from the certain plot in range, multiplot binary raw file}\
         -setup {
     set r [tclsimrawreader::openraw -dialect ltspice $filePath]
 } -body {
@@ -999,6 +999,648 @@ valuebytes 8 offsetbytes 64} {index 9 name I(V1) type device_current storage rea
 10 name L1:flux type voltage storage real64 valuebytes 8 offsetbytes 80} {index 11 name L2:flux type voltage storage\
 real64 valuebytes 8 offsetbytes 88} {index 12 name L3:flux type voltage storage real64 valuebytes 8 offsetbytes 96}}}\
 -cleanup {
+    $r close
+    unset r
+}
+
+### Multiplot plot DC ASCII
+set filePath [file join $rawFolder dc_multiplot_ascii.raw]
+test testDCAsciiMultiPlot-1 {read vectors names with default plot (first), multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names]
+} -result {V1 V(n001) V(n002) I(V1) I(V2) I(cdg:Z1) Ic(Z1) Id(m1:Z1) Ie(Z1) Ig(Z1) Ig(m1:Z1) Is(m1:Z1)} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-2 {read number of points with default plot (first), multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints]
+} -result 51 -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-3 {read all values of selected vector with default plot (first), multiplot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector I(V1)]
+} -result {0.0 -2.735171483747569e-8 -4.32521708448872e-8 -5.513350276320459e-8 -6.515939054985106e-8\
+-7.405142010696803e-8 -8.216005986660872e-8 -8.96867162758488e-8 -9.675900169980777e-8 -1.034649561582046e-7\
+-1.098669688559527e-7 -1.160124329935272e-7 -1.219368104266023e-7 -1.27669184113442e-7 -1.332343320115097e-7\
+-1.386461372376838e-7 -1.439278101145171e-7 -1.490855510155576e-7 -1.541339162969256e-7 -1.590815710272839e-7\
+-1.639365656558286e-7 -1.687081558898713e-7 -1.73402248115903e-7 -1.780227254499748e-7 -1.82577634788569e-7\
+-1.870686343607953e-7 -1.915011580422254e-7 -1.958788597988779e-7 -2.002046457505421e-7 -2.044806493017821e-7\
+-2.087127164429564e-7 -2.129018188412561e-7 -2.170481145924399e-7 -2.21159002222744e-7 -2.252318491713323e-7\
+-2.292685081783884e-7 -2.332714093000685e-7 -2.372451728405119e-7 -2.41184828553282e-7 -2.450980307599997e-7\
+-2.489831842922233e-7 -2.528456786166035e-7 -2.566839398809806e-7 -2.60495575332692e-7 -2.642787499951225e-7\
+-2.680483408568021e-7 -2.717910092542237e-7 -2.755164256740211e-7 -2.792189555122996e-7 -2.829078322719106e-7\
+-2.865729893386449e-7} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-4 {read range of values of selected vector with default plot (first), multiplot binary raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector I(V1) -from 0 -count 10]
+} -result {0.0 -2.735171483747569e-8 -4.32521708448872e-8 -5.513350276320459e-8 -6.515939054985106e-8\
+-7.405142010696803e-8 -8.216005986660872e-8 -8.96867162758488e-8 -9.675900169980777e-8 -1.034649561582046e-7} -cleanup\
+{
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-5 {read range of values of all vectors with default plot (first), multiplot binary raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors -all -from 0 -count 10]
+} -result {V1 {0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5} V(n001) {0.0 0.5 1.0 1.5 2.0 2.5 3.0 3.5 4.0 4.5} V(n002) {0.0\
+0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0} I(V1) {0.0 -2.735171483747569e-8 -4.32521708448872e-8 -5.513350276320459e-8\
+-6.515939054985106e-8 -7.405142010696803e-8 -8.216005986660872e-8 -8.96867162758488e-8 -9.675900169980777e-8\
+-1.034649561582046e-7} I(V2) {0.0 2.105494701467305e-24 5.132795097064677e-24 8.19449302232769e-24\
+1.126823651063793e-23 1.434820565519833e-23 1.743198650639234e-23 2.051834415695295e-23 2.360656254293794e-23\
+2.66961873983661e-23} I(cdg:Z1) {0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0} Ic(Z1) {0.0 2.735128953459228e-8\
+4.324937685340091e-8 5.512900315375013e-8 6.515794592463765e-8 7.405130532640965e-8 8.216004576642169e-8\
+8.96864318347921e-8 9.675885195331536e-8 1.034645967804952e-7} Id(m1:Z1) {-2.647553115614492e-10 3.395810173105599e-13\
+8.278700359318376e-13 -2.634336880533533e-10 -2.62937865429731e-10 2.314223081061269e-12 2.811609260371475e-12\
+-2.6144590185915e-10 -2.609478017871889e-10 4.305836525197898e-12} Ie(Z1) {-0.0 -2.735128953459228e-8\
+-4.324937685340091e-8 -5.512900315375012e-8 -6.515794592463764e-8 -7.405130532640964e-8 -8.216004576642168e-8\
+-8.968643183479208e-8 -9.675885195331533e-8 -1.034645967804952e-7} Ig(Z1) {0.0 -2.105402307325472e-24\
+-5.132794222777394e-24 -8.194065750194471e-24 -1.126816601665246e-23 -1.434818310257987e-23 -1.743197741430315e-23\
+-2.05183401542548e-23 -2.360656060041376e-23 -2.669618645622697e-23} Ig(m1:Z1) {0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0\
+0.0} Is(m1:Z1) {2.647553115614492e-10 -3.395810173105599e-13 -8.278700359318376e-13 2.634336880533533e-10\
+2.62937865429731e-10 -2.314223081061269e-12 -2.811609260371475e-12 2.6144590185915e-10 2.609478017871889e-10\
+-4.305836525197898e-12}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-6 {read plots metadata, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} plotname {DC\
+transfer characteristic} nvariables 12 npoints 51 dataoffset 638 databytes 15033} {index 1 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} plotname {DC transfer characteristic} nvariables\
+12 npoints 51 dataoffset 15671 databytes 15046} {index 2 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} plotname {DC transfer characteristic} nvariables\
+12 npoints 51 dataoffset 30717 databytes 15095} {index 3 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} plotname {DC transfer characteristic} nvariables\
+12 npoints 51 dataoffset 45812 databytes 15096} {index 4 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} plotname {DC transfer characteristic} nvariables\
+12 npoints 51 dataoffset 60908 databytes 15096}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-7 {read names from the certain plot, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names -plot 2]
+} -result {V1 V(n001) V(n002) I(V1) I(V2) I(cdg:Z1) Ic(Z1) Id(m1:Z1) Ie(Z1) Ig(Z1) Ig(m1:Z1) Is(m1:Z1)} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-8 {read number of points from the certain plot, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints -plot 2]
+} -result 51 -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-9 {read vector from the certain plot, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector -plot 2 I(V1)]
+} -result {7.499826006800803e-32 -0.007075208504258246 -1.519300601826773 -3.496883294708297 -5.134966702226606\
+-6.524774911757319 -7.70747008913176 -8.703942806559667 -9.525993305827598 -10.18062574485663 -10.67196118338751\
+-11.00217063746737 -11.17193893417499 -11.2053388023063 -11.2220969863622 -11.23833476340764 -11.25410653258706\
+-11.2694579344909 -11.28442770366598 -11.29904904722366 -11.31335068876012 -11.3273576718409 -11.34109198727833\
+-11.35457306940623 -11.36781819327587 -11.38084279594204 -11.39366073870997 -11.40628452323801 -11.41872547087291\
+-11.43099387308871 -11.44309911739106 -11.45504979519319 -11.46685379247629 -11.47851836870313 -11.49005022380152\
+-11.50145555709855 -11.51274011778219 -11.52390924943779 -11.53496792902456 -11.54592080078623 -11.55677220701227\
+-11.56752621451369 -11.57818663825674 -11.58875706317076 -11.5992408626812 -11.6096412158322 -11.61996112272323\
+-11.63020341815081 -11.64037078428282 -11.65046576144596 -11.66049075891374} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-10 {read vector from the certain plot in range, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector -plot 2 I(V1) -from 5 -count 16]
+} -result {-6.524774911757319 -7.70747008913176 -8.703942806559667 -9.525993305827598 -10.18062574485663\
+-10.67196118338751 -11.00217063746737 -11.17193893417499 -11.2053388023063 -11.2220969863622 -11.23833476340764\
+-11.25410653258706 -11.2694579344909 -11.28442770366598 -11.29904904722366 -11.31335068876012} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-11 {read all vector values from the certain plot in range, multiplot binary raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors -plot 2 -all -from 5 -count 16]
+} -result {V1 {2.5 3.0 3.5 4.0 4.5 5.0 5.5 6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0} V(n001) {2.5 3.0 3.5 4.0 4.5 5.0 5.5\
+6.0 6.5 7.0 7.5 8.0 8.5 9.0 9.5 10.0} V(n002) {10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0 10.0\
+10.0 10.0} I(V1) {-6.524774911757319 -7.70747008913176 -8.703942806559667 -9.525993305827598 -10.18062574485663\
+-10.67196118338751 -11.00217063746737 -11.17193893417499 -11.2053388023063 -11.2220969863622 -11.23833476340764\
+-11.25410653258706 -11.2694579344909 -11.28442770366598 -11.29904904722366 -11.31335068876012} I(V2)\
+{-5.194053431809847e-23 -4.892735802419306e-23 -4.589277420664241e-23 -4.284218247607354e-23 -3.977865943439134e-23\
+-3.670406841834553e-23 -3.361955031490745e-23 -3.052576054229736e-23 -2.742436734742317e-23 -2.432216483204185e-23\
+-2.122004610671393e-23 -1.811800253618645e-23 -1.501602687376774e-23 -1.191411296711682e-23 -8.812255539983165e-24\
+-5.710450026909472e-24} I(cdg:Z1) {0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0} Ic(Z1)\
+{6.524782493312151 7.712684092126556 8.706983765187926 9.52780645326751 10.18193330498441 10.67299864566426\
+11.0030552727784 11.17274406868587 11.20589653681776 11.22210425207293 11.23833462509382 11.2541063986365\
+11.26945782468835 11.28442761260689 11.29904897081011 11.31335062401222} Id(m1:Z1) {2.502288314486738 3.075689673212297\
+3.571285428190969 3.986506946280739 4.319766594248841 4.569885419794597 4.735907619242689 4.817004952710553\
+4.825587703176626 4.825587703177126 4.825587703177627 4.825587703178127 4.825587703178627 4.825587703179127\
+4.825587703179628 4.825587703180128} Ie(Z1) {-6.524782493312151 -7.712684092126556 -8.706983765187926 -9.52780645326751\
+-10.18193330498441 -10.67299864566426 -11.0030552727784 -11.17274406868587 -11.20589653681776 -11.22210425207293\
+-11.23833462509382 -11.2541063986365 -11.26945782468835 -11.28442761260689 -11.29904897081011 -11.31335062401222}\
+Ig(Z1) {5.194053521096226e-23 4.892785975242279e-23 4.589303737929172e-23 4.284232717657661e-23 3.977875792868521e-23\
+3.670414343607958e-23 3.361961257933541e-23 3.052581639676604e-23 2.742440604587288e-23 2.432216544558452e-23\
+2.122004610525903e-23 1.811800253592644e-23 1.501602687363329e-23 1.191411296704111e-23 8.81225553994431e-24\
+5.710450026899617e-24} Ig(m1:Z1) {0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0 0.0} Is(m1:Z1)\
+{-2.502288314486738 -3.075689673212297 -3.571285428190969 -3.986506946280739 -4.319766594248841 -4.569885419794597\
+-4.735907619242689 -4.817004952710553 -4.825587703176626 -4.825587703177126 -4.825587703177627 -4.825587703178127\
+-4.825587703178627 -4.825587703179127 -4.825587703179628 -4.825587703180128}} -cleanup {
+    $r close
+    unset r
+}
+
+test testDCAsciiMultiPlot-12 {read header from the certain plot, multiplot binary raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r header -plot 2]
+} -result {title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\IGBT.net} date {Thu Jul  9 00:57:19 2026}\
+plotname {DC transfer characteristic} nvariables 12 npoints 51 pointstride 96 flags {real double forward linear\
+stepped} variables {{index 0 name V1 type voltage storage real64 valuebytes 8 offsetbytes 0} {index 1 name V(n001) type\
+voltage storage real64 valuebytes 8 offsetbytes 8} {index 2 name V(n002) type voltage storage real64 valuebytes 8\
+offsetbytes 16} {index 3 name I(V1) type device_current storage real64 valuebytes 8 offsetbytes 24} {index 4 name I(V2)\
+type device_current storage real64 valuebytes 8 offsetbytes 32} {index 5 name I(cdg:Z1) type device_current storage\
+real64 valuebytes 8 offsetbytes 40} {index 6 name Ic(Z1) type device_current storage real64 valuebytes 8 offsetbytes\
+48} {index 7 name Id(m1:Z1) type device_current storage real64 valuebytes 8 offsetbytes 56} {index 8 name Ie(Z1) type\
+device_current storage real64 valuebytes 8 offsetbytes 64} {index 9 name Ig(Z1) type device_current storage real64\
+valuebytes 8 offsetbytes 72} {index 10 name Ig(m1:Z1) type device_current storage real64 valuebytes 8 offsetbytes 80}\
+{index 11 name Is(m1:Z1) type device_current storage real64 valuebytes 8 offsetbytes 88}}} -cleanup {
+    $r close
+    unset r
+}
+
+### Multiplot plot AC ASCII
+set filePath [file join $rawFolder ac_multiplot_ascii.raw]
+test testACAsciiMultiPlot-1 {read vectors names with default plot (first), multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names]
+} -result {frequency V(in) V(out) I(C1) I(C2) I(C3) I(I1) I(L1) I(L2) I(R1) I(R2)} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-2 {read number of points with default plot (first), multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints]
+} -result 51 -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-3 {read all values of selected vector with default plot (first), multiplot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector V(out)]
+} -result {{-0.009927038797473328 -0.02421873830017154} {-0.01124849403168019 -0.02629622515686864}\
+{-0.01279088820176742 -0.02859890010941554} {-0.0145998334820283 -0.03115575115849688} {-0.01673228444269118\
+-0.03399955594718234} {-0.0192598478423031 -0.03716709431046017} {-0.02227319499376974 -0.0406991260711407}\
+{-0.02588798193226716 -0.04463991235178667} {-0.03025283801636624 -0.04903589534835774} {-0.03556019317058114\
+-0.05393287014593511} {-0.04206098446486872 -0.05937049526666445} {-0.05008460024895919 -0.06537214270079343}\
+{-0.06006570870113908 -0.0719266155487802} {-0.07257963624163105 -0.07895570490158561} {-0.08838705506565553\
+-0.08625717295311704} {-0.1084852636860749 -0.09340545754529736} {-0.134153402075089 -0.09958110386853197}\
+{-0.1669539071345117 -0.1032853600422406} {-0.2085954585923838 -0.1018877231429646} {-0.2604489446825308\
+-0.09098864054762994} {-0.3223365991339466 -0.06376393670717051} {-0.3901499670798153 -0.01099712341265596}\
+{-0.452546306191873 0.07654626516483862} {-0.4894453139928883 0.2016209715646125} {-0.4777824352094031\
+0.3521730818104611} {-0.4051809870898823 0.5008419232461097} {-0.279030060560339 0.6180277276036925}\
+{-0.1200354475218587 0.6860483156281825} {0.05034299880985305 0.7004529002372176} {0.2148305146821399\
+0.6631919511911163} {0.3578589098275433 0.5788269555452629} {0.4636059542626297 0.4568319376091544} {0.5198592406404006\
+0.3149140114320142} {0.5251633786396499 0.1762049975352444} {0.4907808293263054 0.06011167849422713}\
+{0.4342617839624833 -0.02472480638309027} {0.3711555877593321 -0.07977696493524744} {0.3111740262090117\
+-0.111557397198708} {0.2586909299682389 -0.1272473895945496} {0.2147434896865124 -0.1326809826407283}\
+{0.1787543719873363 -0.1319705390541962} {0.1495664296821034 -0.1277990425366893} {0.1259482558080886\
+-0.1218375413507407} {0.1067977283782192 -0.1150937685995064} {0.09119916924900846 -0.1081580670845963}\
+{0.07841868424131263 -0.1013641884253373} {0.06787818102381012 -0.09489054308043367} {0.05912558271610171\
+-0.08882274203079388} {0.05180787777615047 -0.08319184627551325} {0.04564887561173384 -0.07799762445414003}\
+{0.04043162935362901 -0.07322262508114062}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-4 {read range of values of selected vector with default plot (first), multiplot ascii raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector V(out) -from 0 -count 10]
+} -result {{-0.009927038797473328 -0.02421873830017154} {-0.01124849403168019 -0.02629622515686864}\
+{-0.01279088820176742 -0.02859890010941554} {-0.0145998334820283 -0.03115575115849688} {-0.01673228444269118\
+-0.03399955594718234} {-0.0192598478423031 -0.03716709431046017} {-0.02227319499376974 -0.0406991260711407}\
+{-0.02588798193226716 -0.04463991235178667} {-0.03025283801636624 -0.04903589534835774} {-0.03556019317058114\
+-0.05393287014593511}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-5 {read range of values of all vectors with default plot (first), multiplot ascii raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors {frequency V(out)} -from 0 -count 10]
+} -result {frequency {{5000000.0 0.0} {5069797.398950146 0.0} {5140569.133280331 0.0} {5212328.804205606 0.0}\
+{5285090.202806901 0.0} {5358867.312681464 0.0} {5433674.312630289 0.0} {5509525.579383052 0.0} {5586435.690361097 0.0}\
+{5664419.42647899 0.0}} V(out) {{-0.009927038797473328 -0.02421873830017154} {-0.01124849403168019\
+-0.02629622515686864} {-0.01279088820176742 -0.02859890010941554} {-0.0145998334820283 -0.03115575115849688}\
+{-0.01673228444269118 -0.03399955594718234} {-0.0192598478423031 -0.03716709431046017} {-0.02227319499376974\
+-0.0406991260711407} {-0.02588798193226716 -0.04463991235178667} {-0.03025283801636624 -0.04903589534835774}\
+{-0.03556019317058114 -0.05393287014593511}}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-6 {read plots metadata, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} plotname\
+{AC Analysis} nvariables 11 npoints 51 dataoffset 579 databytes 26408} {index 1 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} plotname {AC Analysis} nvariables 11 npoints 51\
+dataoffset 26987 databytes 26415} {index 2 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} plotname {AC Analysis} nvariables 11 npoints 51\
+dataoffset 53402 databytes 26457}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-7 {read names from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names -plot 2]
+} -result {frequency V(in) V(out) I(C1) I(C2) I(C3) I(I1) I(L1) I(L2) I(R1) I(R2)} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-8 {read number of points from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints -plot 2]
+} -result 51 -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-9 {read vector from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector -plot 2 V(out)]
+} -result {{-0.06360244949258684 -0.1099725711070864} {-0.0760222766767755 -0.1216466438975981} {-0.09168634346412909\
+-0.1346558605939208} {-0.1116608805481837 -0.1489642650052583} {-0.1374104909301126 -0.1643099427686458}\
+{-0.1709289664625219 -0.1799714706084425} {-0.2148484980575181 -0.1943281480433278} {-0.2723771009864792\
+-0.2040693093135545} {-0.3466463974083297 -0.2029178880242442} {-0.4385400621512934 -0.180099625921146}\
+{-0.5417215888272312 -0.1202656869165015} {-0.6357631542705062 -0.009505658797470673} {-0.6866219976386481\
+0.1489222376017393} {-0.6675970119708431 0.3226003842450594} {-0.5851498312984623 0.4678272929843711}\
+{-0.4718819743238297 0.5624341510715561} {-0.3578618790137471 0.6114577937724268} {-0.2574699381833785\
+0.6306529851854911} {-0.1732625583645523 0.6339723225637625} {-0.1026293701226811 0.6303995774709998}\
+{-0.04162439537724582 0.6248796049017318} {0.01358441778707111 0.6197942072362377} {0.0663849709934833\
+0.6159802151072382} {0.1197773453239185 0.6132485903061576} {0.1764944236017578 0.6105364811638303} {0.239030317605942\
+0.6057941071828363} {0.3094378991585711 0.5956805793432659} {0.3887023197703553 0.575199486663823} {0.4754696605133546\
+0.5376255984304938} {0.5641582066571448 0.4754880967825854} {0.6434285406551089 0.3836253625029551} {0.697507582663064\
+0.2641971946274477} {0.7125638276112131 0.1301568928278039} {0.6851636050654425 0.001784270959778317}\
+{0.6247621377659895 -0.1031381724624366} {0.5474246360342993 -0.176852948568799} {0.4675359586176386\
+-0.2212855320197325} {0.3939133501143545 -0.243157002567673} {0.3302485311013388 -0.2497214120951992}\
+{0.2770586999499237 -0.2468124762767316} {0.2333686460981247 -0.2385048510525919} {0.1977149809096717\
+-0.2274265853667998} {0.1686289151803158 -0.2151877623591392} {0.1448229130686855 -0.2027351711695932}\
+{0.125235339259394 -0.1906013370431489} {0.1090165070990297 -0.179066751863418} {0.09549576261456305\
+-0.1682616191638718} {0.08414649257926181 -0.1582283818123602} {0.0745552399738528 -0.1489596955290585}\
+{0.06639646477795355 -0.1404212901055034} {0.05941267068606853 -0.1325656045802992}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-10 {read vector from the certain plot in range, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector -plot 2 V(out) -from 5 -count 16]
+} -result {{-0.1709289664625219 -0.1799714706084425} {-0.2148484980575181 -0.1943281480433278} {-0.2723771009864792\
+-0.2040693093135545} {-0.3466463974083297 -0.2029178880242442} {-0.4385400621512934 -0.180099625921146}\
+{-0.5417215888272312 -0.1202656869165015} {-0.6357631542705062 -0.009505658797470673} {-0.6866219976386481\
+0.1489222376017393} {-0.6675970119708431 0.3226003842450594} {-0.5851498312984623 0.4678272929843711}\
+{-0.4718819743238297 0.5624341510715561} {-0.3578618790137471 0.6114577937724268} {-0.2574699381833785\
+0.6306529851854911} {-0.1732625583645523 0.6339723225637625} {-0.1026293701226811 0.6303995774709998}\
+{-0.04162439537724582 0.6248796049017318}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-11 {read all vector values from the certain plot in range, multiplot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors -plot 2 {frequency V(out)} -from 5 -count 16]
+} -result {frequency {{5358867.312681464 0.0} {5433674.312630289 0.0} {5509525.579383052 0.0} {5586435.690361097 0.0}\
+{5664419.42647899 0.0} {5743491.774985172 0.0} {5823667.932342277 0.0} {5904963.307147649 0.0} {5987393.523094639 0.0}\
+{6070974.421975231 0.0} {6155722.066724577 0.0} {6241652.744508055 0.0} {6328782.969851395 0.0} {6417129.487814516 0.0}\
+{6506709.277209663 0.0} {6597539.553864465 0.0}} V(out) {{-0.1709289664625219 -0.1799714706084425} {-0.2148484980575181\
+-0.1943281480433278} {-0.2723771009864792 -0.2040693093135545} {-0.3466463974083297 -0.2029178880242442}\
+{-0.4385400621512934 -0.180099625921146} {-0.5417215888272312 -0.1202656869165015} {-0.6357631542705062\
+-0.009505658797470673} {-0.6866219976386481 0.1489222376017393} {-0.6675970119708431 0.3226003842450594}\
+{-0.5851498312984623 0.4678272929843711} {-0.4718819743238297 0.5624341510715561} {-0.3578618790137471\
+0.6114577937724268} {-0.2574699381833785 0.6306529851854911} {-0.1732625583645523 0.6339723225637625}\
+{-0.1026293701226811 0.6303995774709998} {-0.04162439537724582 0.6248796049017318}}} -cleanup { 
+    $r close
+    unset r
+}
+
+test testACAsciiMultiPlot-12 {read header from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r header -plot 2]
+} -result {title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} date {Thu Jul  9 01:02:47 2026}\
+plotname {AC Analysis} nvariables 11 npoints 51 pointstride 176 flags {complex forward log stepped} variables {{index 0\
+name frequency type frequency storage complex128 valuebytes 16 offsetbytes 0} {index 1 name V(in) type voltage storage\
+complex128 valuebytes 16 offsetbytes 16} {index 2 name V(out) type voltage storage complex128 valuebytes 16 offsetbytes\
+32} {index 3 name I(C1) type device_current storage complex128 valuebytes 16 offsetbytes 48} {index 4 name I(C2) type\
+device_current storage complex128 valuebytes 16 offsetbytes 64} {index 5 name I(C3) type device_current storage\
+complex128 valuebytes 16 offsetbytes 80} {index 6 name I(I1) type device_current storage complex128 valuebytes 16\
+offsetbytes 96} {index 7 name I(L1) type device_current storage complex128 valuebytes 16 offsetbytes 112} {index 8 name\
+I(L2) type device_current storage complex128 valuebytes 16 offsetbytes 128} {index 9 name I(R1) type device_current\
+storage complex128 valuebytes 16 offsetbytes 144} {index 10 name I(R2) type device_current storage complex128\
+valuebytes 16 offsetbytes 160}}} -cleanup {
+    $r close
+    unset r
+}
+
+### Multiplot plot Tran ASCII
+set filePath [file join $rawFolder tran_multiplot_ascii.raw]
+test testTranAsciiMultiPlot-1 {read vectors names with default plot (first), multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names]
+} -result {time V(a) V(b) V(in) V(n001) I(L1) I(L2) I(L3) I(R1) I(V1) L1:flux L2:flux L3:flux} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-2 {read number of points with default plot (first), multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints]
+} -result 1072 -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-3 {read range of values of selected vector with default plot (first), multiplot ascii raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector L2:flux -from 0 -count 10]
+} -result {0.0 -1.348698534250677e-16 -2.151649821396114e-16 -4.232083993632736e-16 -1.124014169253867e-15\
+-3.664501217566363e-15 -1.330097548238316e-14 -5.079590975732745e-14 -1.986736018689827e-13 -7.859793249863689e-13}\
+-cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-4 {read range of values of all vectors with default plot (first), multiplot ascii raw\
+                                       file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors -all -from 0 -count 10]
+} -result {time {0.0 9.765624723809263e-13 1.386162687254812e-12 2.205363117002584e-12 3.843763976498128e-12\
+7.120565695489216e-12 1.367416913347139e-11 2.678137600943574e-11 5.299578976136445e-11 1.054246172652218e-10} V(a)\
+{0.0 -0.0001381067338125041 -0.0001960329262494761 -0.0003118853063781057 -0.0005435900381634785 -0.001006999387846709\
+-0.00193381763166329 -0.003787452297098427 -0.007494714339188521 -0.01490920926834358} V(b) {0.0 -0.0001953124160136707\
+-0.0002772324229750802 -0.0004410724301870105 -0.0007687524043455435 -0.001424112191601341 -0.002734831121868117\
+-0.005356266405424508 -0.01059912666464552 -0.02108480595165555} V(in) {0.0 9.765624723809263e-5 0.0001386162687254812\
+0.0002205363117002584 0.0003843763976498128 0.0007120565695489216 0.001367416913347139 0.002678137600943574\
+0.005299578976136444 0.01054246172652218} V(n001) {0.0 9.765620840449139e-5 0.0001386162119261559 0.000220536215614041\
+0.0003843762028571479 0.0007120560968127262 0.001367415562601474 0.002678133205690385 0.005299563337922319\
+0.01054240298667018} I(L1) {0.0 -3.88336012335642e-12 -5.679932530020167e-12 -9.608621747198102e-12\
+-1.947926649316834e-11 -4.727361953749154e-11 -1.350745665600331e-10 -4.395253188641647e-10 -1.563821412602634e-9\
+-5.873985200500276e-9} I(L2) {0.0 -4.391542463670763e-22 -4.863906820136332e-22 -2.265280353658174e-21\
+2.705166561971099e-21 2.713099094798512e-21 3.653807015250175e-21 -3.143048836392823e-20 -3.26810658966605e-20\
+-1.394588643401986e-19} I(L3) {0.0 -7.372540034546877e-22 -3.265130880113811e-22 -1.622222754148313e-21\
+-3.37425227994993e-21 5.220858680466405e-21 1.310309020246548e-21 -2.391255881592487e-20 -3.876607143889053e-20\
+-2.561670435856183e-20} I(R1) {0.0 -3.883360123811513e-12 -5.679932528002488e-12 -9.608621746024816e-12\
+-1.947926649083394e-11 -4.727361953499667e-11 -1.350745665491815e-10 -4.395253188748533e-10 -1.563821412555594e-9\
+-5.873985200327559e-9} I(V1) {0.0 -3.883360123472699e-12 -5.679932527324861e-12 -9.608621746024816e-12\
+-1.947926648676818e-11 -4.727361953499667e-11 -1.350745665491815e-10 -4.395253189182213e-10 -1.56382141264233e-9\
+-5.873985200370926e-9} L1:flux {0.0 -9.536738832283707e-17 -1.521446185127948e-16 -2.992535300057373e-16\
+-7.947980431770995e-16 -2.591193665334897e-15 -9.405209973496596e-15 -3.591813228989869e-14 -1.404834512806962e-13\
+-5.557713111576851e-13} L2:flux {0.0 -1.348698534250677e-16 -2.151649821396114e-16 -4.232083993632736e-16\
+-1.124014169253867e-15 -3.664501217566363e-15 -1.330097548238316e-14 -5.079590975732745e-14 -1.986736018689827e-13\
+-7.859793249863689e-13} L3:flux {0.0 -1.907347758690021e-16 -3.042892358896031e-16 -5.985070580897506e-16\
+-1.589596082458346e-15 -5.18238732121507e-15 -1.881041991997828e-14 -7.183626449189232e-14 -2.809669022486281e-13\
+-1.111542621140573e-12}} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-5 {read plots metadata, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\Transformer2.net}\
+plotname {Transient Analysis} nvariables 13 npoints 1072 dataoffset 597 databytes 347828} {index 1 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\Transformer2.net} plotname {Transient Analysis} nvariables\
+13 npoints 1072 dataoffset 348425 databytes 348963} {index 2 kind values title\
+{C:\Users\georg\AppData\Local\LTspice\examples\Educational\Transformer2.net} plotname {Transient Analysis} nvariables\
+13 npoints 1072 dataoffset 697388 databytes 348968}} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-6 {read names from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r names -plot 2]
+} -result {time V(a) V(b) V(in) V(n001) I(L1) I(L2) I(L3) I(R1) I(V1) L1:flux L2:flux L3:flux} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-7 {read number of points from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r npoints -plot 2]
+} -result 1072 -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-8 {read vector from the certain plot in range, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vector -plot 2 L2:flux -from 5 -count 16]
+} -result {-5.182387321215082e-15 -1.881041991997832e-14 -7.183626449189247e-14 -2.809669022486286e-13\
+-1.111542621140576e-12 -4.421941023916866e-12 -1.7639639222287e-11 -7.04619494694011e-11 -2.816486918590583e-10\
+-1.126146400348866e-9 -4.503284668025692e-9 -9.996533501788325e-9 -1.817329781522544e-8 -2.724792513695704e-8\
+-3.963857768676104e-8 -6.439682927894226e-8} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-9 {read all vector values from the certain plot in range, multiplot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r vectors -plot 2 {L2:flux I(L2)} -from 5 -count 16]
+} -result {L2:flux {-5.182387321215082e-15 -1.881041991997832e-14 -7.183626449189247e-14 -2.809669022486286e-13\
+-1.111542621140576e-12 -4.421941023916866e-12 -1.7639639222287e-11 -7.04619494694011e-11 -2.816486918590583e-10\
+-1.126146400348866e-9 -4.503284668025692e-9 -9.996533501788325e-9 -1.817329781522544e-8 -2.724792513695704e-8\
+-3.963857768676104e-8 -6.439682927894226e-8} I(L2) {1.686401953042198e-21 5.985345626495162e-21 9.88649337738933e-21\
+5.523254586665625e-20 2.968515342731268e-20 -9.445280731649801e-20 -2.531942986357705e-19 -5.386659602551843e-19\
+-1.277664208125172e-19 2.580323746410166e-19 -1.710121470198255e-18 -8.750867777290363e-19 -4.411691696435218e-18\
+2.907051816562486e-18 2.816636839707377e-18 1.632342504380506e-18}} -cleanup {
+    $r close
+    unset r
+}
+
+test testTranAsciiMultiPlot-10 {read header from the certain plot, multiplot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw -dialect ltspice $filePath]
+} -body {
+    return [$r header -plot 2]
+} -result {title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\Transformer2.net} date {Thu Jul  9 01:13:11\
+2026} plotname {Transient Analysis} nvariables 13 npoints 1072 pointstride 104 flags {real forward stepped} variables\
+{{index 0 name time type time storage real64 valuebytes 8 offsetbytes 0} {index 1 name V(a) type voltage storage real64\
+valuebytes 8 offsetbytes 8} {index 2 name V(b) type voltage storage real64 valuebytes 8 offsetbytes 16} {index 3 name\
+V(in) type voltage storage real64 valuebytes 8 offsetbytes 24} {index 4 name V(n001) type voltage storage real64\
+valuebytes 8 offsetbytes 32} {index 5 name I(L1) type device_current storage real64 valuebytes 8 offsetbytes 40} {index\
+6 name I(L2) type device_current storage real64 valuebytes 8 offsetbytes 48} {index 7 name I(L3) type device_current\
+storage real64 valuebytes 8 offsetbytes 56} {index 8 name I(R1) type device_current storage real64 valuebytes 8\
+offsetbytes 64} {index 9 name I(V1) type device_current storage real64 valuebytes 8 offsetbytes 72} {index 10 name\
+L1:flux type voltage storage real64 valuebytes 8 offsetbytes 80} {index 11 name L2:flux type voltage storage real64\
+valuebytes 8 offsetbytes 88} {index 12 name L3:flux type voltage storage real64 valuebytes 8 offsetbytes 96}}} -cleanup\
+{
+    $r close
+    unset r
+}
+
+### Single plot AC ascii
+set filePath [file join $rawFolder ac_ascii.raw]
+test testACAsciiSinglePlot-1 {read vectors names, single plot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r names]
+} -result {frequency V(in) V(out) I(C1) I(C2) I(C3) I(I1) I(L1) I(L2) I(R1) I(R2)} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-2 {read number of points names, single plot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r npoints]
+} -result 51 -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-3 {read all values of selected vector, single plot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r vector I(L1)]
+} -result {{-0.003500600098451351 0.00202441741833767} {-0.003818899055587368 0.00238642935199976}\
+{-0.004169109886589055 0.002838532244887711} {-0.00454862742264721 0.003409350756682908} {-0.004948146037692652\
+0.004137823670577274} {-0.005345188714954765 0.005076322593865725} {-0.005692149566122488 0.006292849475446607}\
+{-0.005895224748791819 0.007868050184773497} {-0.0057813171879447 0.009875629217841965} {-0.005060661050699235\
+0.01232165345661356} {-0.003333036491703376 0.01501127564032048} {-0.0002602548567011044 0.01737475563382662}\
+{0.004013363610324518 0.01850645262675924} {0.008574786544846235 0.01774607410693222} {0.01226402542808439\
+0.01534044347867753} {0.01454130523124141 0.01220078851450966} {0.01559123552557434 0.009125462556613867}\
+{0.01585936978498577 0.006475200311302073} {0.01572340797092683 0.004297574971322516} {0.01541959307109409\
+0.002510704715686302} {0.01507418292482466 0.001004484680102277} {0.0147456957306881 -0.0003228396607495277}\
+{0.01445322588900788 -0.0015572994666993} {0.01419106046600804 -0.00277140218493441} {0.01393382056946253\
+-0.004027656548740809} {0.01363527906047919 -0.005379765473315788} {0.01322309075018837 -0.00686861975350275}\
+{0.01259269962573885 -0.00850936185593915} {0.01160811123841701 -0.01026562833777199} {0.01012519395610658\
+-0.0120128442226087} {0.008056654472868269 -0.01351222949961451} {0.005472219109302185 -0.01444631418943853}\
+{0.00265892853919278 -0.01455502922124616} {3.622244931407873e-5 -0.01380271729723222} {-0.002048881737697488\
+-0.01241268849990542} {-0.003465094584271603 -0.01072645506161862} {-0.004276060271965506 -0.009034986769308001}\
+{-0.004634056265742008 -0.007507472314587465} {-0.004693667458393442 -0.006207466687632418} {-0.004575144366177238\
+-0.005136008032590175} {-0.004360292044417324 -0.004266549137660793} {-0.004100529625870503 -0.003564955515829195}\
+{-0.00382645357472555 -0.002998657274521424} {-0.00355539607154094 -0.002539874581341827} {-0.003296588492727113\
+-0.002166117742151999} {-0.003054453914382046 -0.001859634361512043} {-0.002830632237030427 -0.001606569454425546}\
+{-0.002625200546092156 -0.001396148128723804} {-0.002437398561709462 -0.001219982783292289} {-0.002266054633558164\
+-0.001071520562934816} {-0.002109832075352303 -0.0009456156012182642}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-4 {read range of values of selected vector, single plot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r vector I(L1) -from 0 -count 10]
+} -result {{-0.003500600098451351 0.00202441741833767} {-0.003818899055587368 0.00238642935199976}\
+{-0.004169109886589055 0.002838532244887711} {-0.00454862742264721 0.003409350756682908} {-0.004948146037692652\
+0.004137823670577274} {-0.005345188714954765 0.005076322593865725} {-0.005692149566122488 0.006292849475446607}\
+{-0.005895224748791819 0.007868050184773497} {-0.0057813171879447 0.009875629217841965} {-0.005060661050699235\
+0.01232165345661356}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-5 {read range of values of all vectors, single plot ascii raw file}\
+        -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r vectors {frequency I(L1)} -from 0 -count 10]
+} -result {frequency {{5000000.0 0.0} {5069797.398950146 0.0} {5140569.133280331 0.0} {5212328.804205606 0.0}\
+{5285090.202806901 0.0} {5358867.312681464 0.0} {5433674.312630289 0.0} {5509525.579383052 0.0} {5586435.690361097 0.0}\
+{5664419.42647899 0.0}} I(L1) {{-0.003500600098451351 0.00202441741833767} {-0.003818899055587368 0.00238642935199976}\
+{-0.004169109886589055 0.002838532244887711} {-0.00454862742264721 0.003409350756682908} {-0.004948146037692652\
+0.004137823670577274} {-0.005345188714954765 0.005076322593865725} {-0.005692149566122488 0.006292849475446607}\
+{-0.005895224748791819 0.007868050184773497} {-0.0057813171879447 0.009875629217841965} {-0.005060661050699235\
+0.01232165345661356}}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-6 {read and print header data, single plot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r header]
+} -result {title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} date {Thu Jul  9\
+01:02:26 2026} plotname {AC Analysis} nvariables 11 npoints 51 pointstride 176 flags {complex forward log} variables\
+{{index 0 name frequency type frequency storage complex128 valuebytes 16 offsetbytes 0} {index 1 name V(in) type\
+voltage storage complex128 valuebytes 16 offsetbytes 16} {index 2 name V(out) type voltage storage complex128\
+valuebytes 16 offsetbytes 32} {index 3 name I(C1) type device_current storage complex128 valuebytes 16 offsetbytes 48}\
+{index 4 name I(C2) type device_current storage complex128 valuebytes 16 offsetbytes 64} {index 5 name I(C3) type\
+device_current storage complex128 valuebytes 16 offsetbytes 80} {index 6 name I(I1) type device_current storage\
+complex128 valuebytes 16 offsetbytes 96} {index 7 name I(L1) type device_current storage complex128 valuebytes 16\
+offsetbytes 112} {index 8 name I(L2) type device_current storage complex128 valuebytes 16 offsetbytes 128} {index 9\
+name I(R1) type device_current storage complex128 valuebytes 16 offsetbytes 144} {index 10 name I(R2) type\
+device_current storage complex128 valuebytes 16 offsetbytes 160}}} -cleanup {
+    $r close
+    unset r
+}
+
+test testACAsciiSinglePlot-7 {read and print plot data, single plot ascii raw file} -setup {
+    set r [tclsimrawreader::openraw $filePath]
+} -body {
+    return [$r plots]
+} -result {{index 0 kind values title {C:\Users\georg\AppData\Local\LTspice\examples\Educational\stepAC.net} plotname\
+{AC Analysis} nvariables 11 npoints 51 dataoffset 571 databytes 26396}} -cleanup {
     $r close
     unset r
 }

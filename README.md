@@ -1,4 +1,4 @@
-# tclsimrawreader - read SPICE .raw file with Tcl
+# tclsimrawreader - read SPICE .raw files with Tcl
 
 `tclsimrawreader` is a Tcl C extension that allows to read SPICE3f5 raw-Binary and raw-ASCII files.
 It doesn't read the whole file data into memory but read certain vectors lazily by request.
@@ -7,7 +7,7 @@ It targets Tcl 9.0 and works on Linux/macOS/Windows.
 
 ## What it gives you (at a glance)
 
-- Reading raw files produced by Ngspice, Xyce and SPICE OPUS
+- Reading raw files produced by Ngspice, Xyce, SPICE OPUS and LTspice
 - Extension is written in C and allows to read large files without putting it into memory.
 - Supports multi-plot files produced by .STEP or loops.
 - Read both binary and ASCII formats.
