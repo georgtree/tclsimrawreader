@@ -356,6 +356,768 @@ LTspice FastAccess files are not supported\&.
 .PP
 The LTspice dialect is based on observed and publicly described LTspice raw-file behavior rather than an
 official file-format specification\&.
+.SH "TCLSIMRAWREADER IMPLEMENTATION OVERVIEW"
+.SS "CORE DATA MODEL"
+.PP
+The reader normalizes all supported raw files into an array of RawPlot objects owned by one RawFile\&.
+.PP
+.RS 4n
+.nf
+RawFile
+    chan
+    dialect
+    encKind
+    enc
+    plots[0]
+    plots[1]
+    \&.\&.\&.
+.fi
+.RE
+.PP
+Each RawPlot contains:
+.PP
+.RS 4n
+.nf
+RawPlot
+    header          parsed RawHeader
+    dataKind        DATA_BINARY or DATA_VALUES
+    dataOffset      offset of the first data byte / first Values point
+    nextOffset      offset immediately after this plot's data block
+    dataBytes       size of this plot's data block
+    pointOffsets    ASCII only: offset of each point
+.fi
+.RE
+.PP
+For binary plots, random access is computed from:
+.PP
+.RS 4n
+.nf
+pointOffset = plot->dataOffset + pointIndex * plot->header\&.pointStrideBytes
+.fi
+.RE
+.PP
+For ASCII plots, random access uses:
+.PP
+.RS 4n
+.nf
+pointOffset = plot->pointOffsets[pointIndex]
+.fi
+.RE
+.PP
+This means binary plots need only dataOffset, numPoints, and pointStrideBytes, while ASCII plots need a
+point-offset index built at open time\&.
+.SS "OPEN PATH"
+.PP
+The top-level command is:
+.PP
+.RS 4n
+.nf
+::tclsimrawreader::openraw ?-dialect generic|ltspice? fileName
+.fi
+.RE
+.PP
+The main open path is:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    RawParseOpenArgs
+    Tcl_FSOpenFileChannel
+    Tcl_SetChannelOption -translation binary
+    DetectEncoding
+
+    loop:
+        ReadHeader
+        Tcl_Tell -> dataOffset
+
+        if DATA_BINARY:
+            binary open path
+
+        if DATA_VALUES:
+            ASCII open path
+
+    Tcl_CreateObjCommand2 -> RawFileObjCmd
+.fi
+.RE
+.PP
+ReadHeader() parses only the text header and stops after consuming either the Binary: or Values: marker\&.
+It leaves the channel positioned at the beginning of the data block\&.
+.PP
+Layout resolution is done after ReadHeader() because LTspice binary layout may require knowing the physical
+data-block size\&.
+.SS "HEADER PARSING PATH"
+.PP
+Header parsing is shared by all dialects and data kinds\&.
+.PP
+.RS 4n
+.nf
+ReadHeader
+    ReadDecodedHeaderLine
+        ReadRawHeaderLine
+        DecodeHeaderLine
+        StripTrailingCR
+
+    ParseFlags
+        AppendFlag
+
+    ParseSizeField
+
+    ReadVariablesSection
+        ParseVariableLine
+            RawIsVariableTypeToken
+.fi
+.RE
+.PP
+The header parser fills:
+.PP
+.RS 4n
+.nf
+title
+date
+plotname
+flags / flagsMask
+numVariables
+numPoints
+variables[]
+.fi
+.RE
+.PP
+It does not read vector values\&.
+.SS "GENERIC BINARY OPEN PATH"
+.PP
+The generic dialect is used for SPICE3-style raw files, including ngspice and Xyce-style files\&.
+.PP
+The generic binary open path is:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawHeaderResolveVariableLayout(\&.\&.\&., RAW_DIALECT_GENERIC, 0)
+        ResolveDefaultStorage
+        RawSetVariableLayout for each variable
+
+    ComputeBinaryByteCount
+        dataBytes = numPoints * pointStrideBytes
+
+    nextOffset = dataOffset + dataBytes
+    Tcl_Seek(chan, nextOffset, SEEK_SET)
+
+    RawFileAppendPlotMove
+.fi
+.RE
+.PP
+For generic binary files, the data block border is calculated entirely from the header:
+.PP
+.RS 4n
+.nf
+dataOffset  = offset immediately after Binary:
+dataBytes   = No\&. Points * pointStrideBytes
+nextOffset  = dataOffset + dataBytes
+.fi
+.RE
+.PP
+The generic binary layout is point-major:
+.PP
+.RS 4n
+.nf
+point 0: var0 var1 var2 \&.\&.\&.
+point 1: var0 var1 var2 \&.\&.\&.
+point 2: var0 var1 var2 \&.\&.\&.
+.fi
+.RE
+.PP
+For real data, all variables use the same resolved real storage\&. For complex data, each variable stores a real
+and imaginary component\&.
+.SS "GENERIC ASCII OPEN PATH"
+.PP
+The generic ASCII open path is:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawHeaderResolveVariableLayout(\&.\&.\&., RAW_DIALECT_GENERIC, 0)
+
+    RawPlotScanAsciiValues
+        scan declared No\&. Points
+        record pointOffsets[]
+
+    RawFileAppendPlotMove
+.fi
+.RE
+.PP
+For generic ASCII files, the block border is found by scanning the declared number of points from the Values:
+block\&.
+.PP
+.RS 4n
+.nf
+dataOffset      = offset after Values:
+pointOffsets[i] = offset of point i
+nextOffset      = channel position after the last scanned point
+dataBytes       = nextOffset - dataOffset
+.fi
+.RE
+.PP
+The ASCII scan does not fully decode all vectors\&. It only records point offsets\&. Actual vector values are
+decoded lazily later\&.
+.PP
+This keeps open-time work small while allowing random access by point range\&.
+.SS "LTSPICE BINARY OPEN PATH"
+.PP
+The LTspice dialect is selected with:
+.PP
+.RS 4n
+.nf
+::tclsimrawreader::openraw -dialect ltspice file\&.raw
+.fi
+.RE
+.PP
+The LTspice binary path is:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawLtspicePrepareBinaryPlot
+        RawGetChannelSize
+        physicalDataBytes = fileSize - dataOffset
+        RawLtspiceDetectAllDouble
+        RawHeaderResolveVariableLayout(\&.\&.\&., RAW_DIALECT_LTSPICE, allDouble)
+        physicalPoints = physicalDataBytes / pointStrideBytes
+        update header\&.numPoints to physicalPoints
+        update dataBytes and nextOffset
+
+    RawLtspiceAppendSplitBinaryPlots
+        if not stepped:
+            RawFileAppendPlotMove
+
+        if stepped:
+            split into pseudo-plots
+.fi
+.RE
+.PP
+LTspice binary block borders are calculated from the physical file size:
+.PP
+.RS 4n
+.nf
+dataOffset          = offset immediately after Binary:
+physicalDataBytes   = fileSize - dataOffset
+nextOffset          = fileSize
+.fi
+.RE
+.PP
+This is needed because LTspice stepped data is stored as one physical data block, not as multiple complete
+raw-file plots\&.
+.PP
+LTspice binary storage detection
+.PP
+LTspice real binary data may use two layouts\&.
+.PP
+Normal mixed layout:
+.PP
+.RS 4n
+.nf
+variable 0: double
+variable 1: float
+variable 2: float
+\&.\&.\&.
+.fi
+.RE
+.PP
+All-double layout:
+.PP
+.RS 4n
+.nf
+variable 0: double
+variable 1: double
+variable 2: double
+\&.\&.\&.
+.fi
+.RE
+.PP
+The storage mode is inferred by RawLtspiceDetectAllDouble()\&.
+.PP
+.RS 4n
+.nf
+RawLtspiceDetectAllDouble
+    RawLtspiceCandidateStrides
+
+    mixedStride  = 8 + (numVariables - 1) * 4
+    doubleStride = numVariables * 8
+
+    compare physicalDataBytes with:
+        numPoints * mixedStride
+        numPoints * doubleStride
+
+    for stepped files:
+        also allow physicalDataBytes to be an integer multiple
+        of the declared per-step byte count
+.fi
+.RE
+.PP
+Complex LTspice binary data is treated as double-based complex storage:
+.PP
+.RS 4n
+.nf
+real component: double
+imag component: double
+.fi
+.RE
+.PP
+LTspice FastAccess files are rejected because their storage order is variable-major instead of point-major\&.
+.SS "LTSPICE ASCII OPEN PATH"
+.PP
+LTspice ASCII files use text values, so the LTspice binary mixed float/double layout is irrelevant\&.
+.PP
+For non-stepped LTspice ASCII files, the path is the same as generic ASCII:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    ReadHeader
+    RawHeaderResolveVariableLayout(\&.\&.\&., RAW_DIALECT_GENERIC, 0)
+    RawPlotScanAsciiValues
+    RawFileAppendPlotMove
+.fi
+.RE
+.PP
+For stepped LTspice ASCII files, the path is:
+.PP
+.RS 4n
+.nf
+RawOpenCmd
+    ReadHeader
+    RawHeaderResolveVariableLayout(\&.\&.\&., RAW_DIALECT_GENERIC, 0)
+
+    RawLtspiceAppendSplitAsciiPlots
+        RawLtspiceScanAllAsciiValues
+            RawAsciiFindNextContentLine
+            RawAsciiReadAxisAtCurrentPoint
+            RawAppendAsciiScannedPoint
+
+        split into pseudo-plots
+.fi
+.RE
+.PP
+RawLtspiceScanAllAsciiValues() scans the whole physical Values: block until EOF or the beginning of the
+next raw header\&.
+.PP
+The ASCII block border is determined as:
+.PP
+.RS 4n
+.nf
+dataOffset = offset after Values:
+nextOffset = EOF or offset of next "Title:" header
+dataBytes  = nextOffset - dataOffset
+.fi
+.RE
+.PP
+During this scan, the reader records:
+.PP
+.RS 4n
+.nf
+pointOffsets[i] = file offset of point i
+axisValues[i]   = decoded scalar value of variable 0 at point i
+.fi
+.RE
+.PP
+The full vector data is still not stored\&. Only offsets and axis values are collected\&.
+.SS "LTSPICE STEPPED PLOT SPLITTING"
+.PP
+LTspice stepped data is normalized into several indexed RawPlot objects\&.
+.PP
+The \&.log file is not read\&. Step parameter names and values are not reconstructed\&. The reader only separates the
+physical raw data into step-sized plots\&.
+.PP
+After splitting:
+.PP
+.RS 4n
+.nf
+physical LTspice data block
+    step 0 data
+    step 1 data
+    step 2 data
+.fi
+.RE
+.PP
+becomes:
+.PP
+.RS 4n
+.nf
+RawFile
+    plots[0] -> step 0
+    plots[1] -> step 1
+    plots[2] -> step 2
+.fi
+.RE
+.PP
+The public API sees these as ordinary plots:
+.PP
+.RS 4n
+.nf
+$handle vector -plot 0 time
+$handle vector -plot 1 time
+$handle vectors -plot 2 -all
+.fi
+.RE
+.SS "LTSPICE TRANSIENT STEP SPLITTING"
+.PP
+Transient data is detected by RawLtspiceIsTransientPlot()\&.
+.PP
+A plot is treated as transient if either:
+.PP
+.RS 4n
+.nf
+plotname contains "Transient"
+.fi
+.RE
+.PP
+or:
+.PP
+.RS 4n
+.nf
+first variable name is "time"
+.fi
+.RE
+.PP
+Transient steps are detected by axis reset\&.
+.PP
+For binary data:
+.PP
+.RS 4n
+.nf
+RawLtspiceFindAxisResetSteps(\&.\&.\&., transientMode = 1)
+    read binary points in chunks
+    RawDecodeBinaryAxisValue
+    if currentAxis <= previousAxis:
+        start new step
+.fi
+.RE
+.PP
+For ASCII data:
+.PP
+.RS 4n
+.nf
+RawLtspiceBuildAxisResetStepsFromValues(\&.\&.\&., transientMode = 1)
+    if axisValues[i] <= axisValues[i - 1]:
+        start new step
+.fi
+.RE
+.PP
+The rule is intentionally simple for transient data because time should increase within one transient run and
+reset at the beginning of the next step\&.
+.SS "LTSPICE NON-TRANSIENT STEP SPLITTING"
+.PP
+For non-transient stepped data, fixed-size splitting is preferred\&.
+.PP
+.RS 4n
+.nf
+RawLtspiceAppendSplitBinaryPlots
+RawLtspiceAppendSplitAsciiPlots
+
+    if not transient
+       and declaredPoints > 0
+       and totalPhysicalPoints > declaredPoints
+       and totalPhysicalPoints % declaredPoints == 0:
+
+        RawLtspiceBuildFixedSteps
+.fi
+.RE
+.PP
+This uses the original No\&. Points header value as the per-step point count\&.
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+declared No\&. Points: 101
+physical points:    303
+
+step 0: points   0\&.\&.100
+step 1: points 101\&.\&.201
+step 2: points 202\&.\&.302
+.fi
+.RE
+.PP
+If fixed-size splitting is not possible, the reader falls back to direction-aware axis reset detection\&.
+.PP
+.RS 4n
+.nf
+RawAxisStartsNewStep
+.fi
+.RE
+.PP
+For increasing sweeps:
+.PP
+.RS 4n
+.nf
+current <= previous  -> new step
+.fi
+.RE
+.PP
+For decreasing sweeps:
+.PP
+.RS 4n
+.nf
+current >= previous  -> new step
+.fi
+.RE
+.PP
+The direction is detected from the first unequal pair of axis values in the current step\&.
+.PP
+This avoids incorrectly handling sweeps such as:
+.PP
+.RS 4n
+.nf
+step 0:  10,  5,  0, -5, -10
+step 1:  10,  5,  0, -5, -10
+.fi
+.RE
+.PP
+where the axis reset is an increase, not a decrease\&.
+.SS "BINARY PSEUDO-PLOT CONSTRUCTION"
+.PP
+Binary LTspice step plots are created by RawLtspiceAppendSegmentPlots()\&.
+.PP
+For each detected step:
+.PP
+.RS 4n
+.nf
+stepPlot\&.header      = clone of base header
+stepPlot\&.numPoints   = step point count
+stepPlot\&.dataKind    = DATA_BINARY
+stepPlot\&.dataOffset  = baseDataOffset + startPoint * pointStrideBytes
+stepPlot\&.dataBytes   = pointCount * pointStrideBytes
+stepPlot\&.nextOffset  = dataOffset + dataBytes
+.fi
+.RE
+.PP
+No binary data is copied\&. Each pseudo-plot references a byte range inside the original physical data block\&.
+.SS "ASCII PSEUDO-PLOT CONSTRUCTION"
+.PP
+ASCII LTspice step plots are created by RawLtspiceAppendAsciiSegmentPlots()\&.
+.PP
+For each detected step:
+.PP
+.RS 4n
+.nf
+stepPlot\&.header            = clone of base header
+stepPlot\&.numPoints         = step point count
+stepPlot\&.dataKind          = DATA_VALUES
+stepPlot\&.pointOffsets[]    = copied subset of base pointOffsets[]
+stepPlot\&.dataOffset        = first point offset in this step
+stepPlot\&.nextOffset        = next step's first point offset, or basePlot->nextOffset
+stepPlot\&.dataBytes         = nextOffset - dataOffset
+.fi
+.RE
+.PP
+Only the point-offset array is copied\&. Textual value data remains in the original file\&.
+.SS "VECTOR EXTRACTION PATH"
+.PP
+Vector extraction is lazy\&. Opening the file builds plot metadata and point indexes, but does not decode every
+vector\&.
+.PP
+\fBSingle vector\fR
+.PP
+.RS 4n
+.nf
+RawFileObjCmd
+    vector subcommand
+        RawSelectPlotFromArgs
+        RawPlotFindVariable
+        RawParseRange
+        RawPlotVectorToObj
+            RawPlotReadVectorsToObj
+.fi
+.RE
+.PP
+\fBMultiple vectors\fR
+.PP
+.RS 4n
+.nf
+RawFileObjCmd
+    vectors subcommand
+        RawSelectPlotFromArgs
+        RawPlotResolveVariableList
+            or RawPlotResolveAllVariables
+        RawParseRange
+        RawPlotReadVectorsToObj
+.fi
+.RE
+.PP
+\fBBackend dispatch\fR
+.PP
+.RS 4n
+.nf
+RawPlotReadVectorsToObj
+    if DATA_BINARY:
+        RawPlotBinaryReadVectorsToObj
+
+    if DATA_VALUES:
+        RawPlotAsciiReadVectorsToObj
+.fi
+.RE
+.PP
+\fBBinary vector reading\fR
+.PP
+Binary vector reading uses point-major offsets\&.
+.PP
+.RS 4n
+.nf
+RawPlotBinaryReadVectorsToObj
+    validate range and selected variables
+    allocate one Tcl list per selected variable
+    seek to first requested point
+    read chunks of complete points
+
+    for each point:
+        for each selected variable:
+            pointer = point + variable\&.offsetBytes
+            RawAppendBinaryValue
+
+    RawBuildVectorResult
+.fi
+.RE
+.PP
+The binary reader reads complete point records even when only a few variables are requested, because the file
+is stored point-major\&.
+.PP
+\fBASCII vector reading\fR
+.PP
+ASCII vector reading uses pointOffsets\&.
+.PP
+.RS 4n
+.nf
+RawPlotAsciiReadVectorsToObj
+    validate range and selected variables
+    allocate one Tcl list per selected variable
+    build sparse all-variable output array
+
+    seek to plot->pointOffsets[firstPoint]
+
+    for each requested point:
+        RawAsciiReadOnePoint
+
+    RawBuildVectorResult
+.fi
+.RE
+.PP
+RawAsciiReadOnePoint() consumes the whole ASCII point, but appends only selected variables\&.
+.PP
+For selected-vector reading, unselected entries in the sparse output array are NULL\&.
+.PP
+.RS 4n
+.nf
+allVecObjs[varIndex] == NULL
+    -> value is parsed/skipped but not appended
+
+allVecObjs[varIndex] != NULL
+    -> value is appended to that variable's list
+.fi
+.RE
+.PP
+This keeps ASCII parsing correct for multi-line points and complex values while avoiding unnecessary output
+objects\&.
+.PP
+\fBResult construction\fR
+.PP
+All vector backends produce one list object per selected variable\&.
+.PP
+RawBuildVectorResult() converts those internal lists to the requested result shape\&.
+.PP
+Single-vector result:
+.PP
+.RS 4n
+.nf
+RAW_VECTOR_RESULT_LIST
+    -> return vecObjs[0]
+.fi
+.RE
+.PP
+Dictionary result:
+.PP
+.RS 4n
+.nf
+RAW_VECTOR_RESULT_DICT
+    -> return dict:
+           variableName -> valueList
+.fi
+.RE
+.PP
+The public commands use this as follows:
+.PP
+.RS 4n
+.nf
+vector
+    RAW_VECTOR_RESULT_LIST
+
+vectors
+vectors -all
+allvectors
+    RAW_VECTOR_RESULT_DICT
+.fi
+.RE
+.SS "OWNERSHIP SUMMARY"
+.PP
+RawFile owns:
+.PP
+.RS 4n
+.nf
+channel
+encoding handle
+plot array
+all plot headers
+all ASCII point-offset arrays
+.fi
+.RE
+.PP
+Each RawPlot owns:
+.PP
+.RS 4n
+.nf
+RawHeader
+pointOffsets, for ASCII plots
+.fi
+.RE
+.PP
+Pseudo-plots own their cloned headers and, for ASCII pseudo-plots, their own point-offset arrays\&.
+.PP
+Pseudo-plots do not copy raw value data\&. They reference the same open channel using different offsets and point
+ranges\&.
+.SS SUMMARY
+.PP
+The implementation follows this principle:
+.PP
+.RS 4n
+.nf
+Open time:
+    parse headers
+    resolve layout
+    find data-block borders
+    build plot list
+    build ASCII point indexes
+    split LTspice stepped data into pseudo-plots
+
+Read time:
+    seek to requested points
+    decode only requested vectors
+    build Tcl list or dictionary result
+.fi
+.RE
+.PP
+Generic SPICE3-style files use explicit headers and declared point counts to find plot borders\&.
+.PP
+LTspice binary files use physical data size to infer storage layout and point count\&.
+.PP
+LTspice stepped files are normalized into ordinary indexed plots, so the rest of the reader can use the same
+vector-reading path for all formats\&.
 
 
 .SH SEE ALSO

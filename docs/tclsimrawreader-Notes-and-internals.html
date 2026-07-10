@@ -298,10 +298,571 @@ values are not available.</p>
 <p>LTspice FastAccess files are not supported.</p>
 <p>The LTspice dialect is based on observed and publicly described LTspice raw-file behavior rather than an
 official file-format specification.</p>
+</section>
+</section>
+</section>
+<section id="tclsimrawreader-implementation-overview">
+<span id="r-notes-and-internals-tclsimrawreader-implementation-overview"></span><span id="r-3a3anotes20and20internalsqztclsimrawreader20implementation20overview"></span><h2>tclsimrawreader implementation overview<a class="headerlink" href="#tclsimrawreader-implementation-overview" title="Link to this heading">¶</a></h2>
+<section id="core-data-model">
+<span id="r-notes-and-internals-core-data-model"></span><span id="r-3a3anotes20and20internalsqzcore20data20model"></span><h3>Core data model<a class="headerlink" href="#core-data-model" title="Link to this heading">¶</a></h3>
+<p>The reader normalizes all supported raw files into an array of RawPlot objects owned by one RawFile.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawFile
+    chan
+    dialect
+    encKind
+    enc
+    plots[0]
+    plots[1]
+    ...
+</pre></div>
+</div>
+<p>Each RawPlot contains:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawPlot
+    header          parsed RawHeader
+    dataKind        DATA_BINARY or DATA_VALUES
+    dataOffset      offset of the first data byte / first Values point
+    nextOffset      offset immediately after this plot&#39;s data block
+    dataBytes       size of this plot&#39;s data block
+    pointOffsets    ASCII only: offset of each point
+</pre></div>
+</div>
+<p>For binary plots, random access is computed from:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="n">pointOffset</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">plot</span><span class="o">-&gt;</span><span class="n">dataOffset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">pointIndex</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">plot</span><span class="o">-&gt;</span><span class="n">header</span><span class="p">.</span><span class="n">pointStrideBytes</span>
+</pre></div>
+</div>
+<p>For ASCII plots, random access uses:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="n">pointOffset</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">plot</span><span class="o">-&gt;</span><span class="n">pointOffsets</span><span class="p">[</span><span class="n">pointIndex</span><span class="p">]</span>
+</pre></div>
+</div>
+<p>This means binary plots need only <code class="docutils literal notranslate"><span class="pre">dataOffset</span></code>, <code class="docutils literal notranslate"><span class="pre">numPoints</span></code>, and <code class="docutils literal notranslate"><span class="pre">pointStrideBytes</span></code>, while ASCII plots need a
+point-offset index built at open time.</p>
+</section>
+<section id="open-path">
+<span id="r-notes-and-internals-open-path"></span><span id="r-3a3anotes20and20internalsqzopen20path"></span><h3>Open path<a class="headerlink" href="#open-path" title="Link to this heading">¶</a></h3>
+<p>The top-level command is:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="o">?-</span>dialect<span class="w"> </span>generic<span class="o">|</span>ltspice<span class="o">?</span><span class="w"> </span>fileName
+</pre></div>
+</div>
+<p>The main open path is:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    RawParseOpenArgs
+    Tcl_FSOpenFileChannel
+    Tcl_SetChannelOption -translation binary
+    DetectEncoding
+
+    loop:
+        ReadHeader
+        Tcl_Tell -&gt; dataOffset
+
+        if DATA_BINARY:
+            binary open path
+
+        if DATA_VALUES:
+            ASCII open path
+
+    Tcl_CreateObjCommand2 -&gt; RawFileObjCmd
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ReadHeader()</span></code> parses only the text header and stops after consuming either the <code class="docutils literal notranslate"><span class="pre">Binary:</span></code> or <code class="docutils literal notranslate"><span class="pre">Values:</span></code> marker.
+It leaves the channel positioned at the beginning of the data block.</p>
+<p>Layout resolution is done after <code class="docutils literal notranslate"><span class="pre">ReadHeader()</span></code> because LTspice binary layout may require knowing the physical
+data-block size.</p>
+</section>
+<section id="header-parsing-path">
+<span id="r-notes-and-internals-header-parsing-path"></span><span id="r-3a3anotes20and20internalsqzheader20parsing20path"></span><h3>Header parsing path<a class="headerlink" href="#header-parsing-path" title="Link to this heading">¶</a></h3>
+<p>Header parsing is shared by all dialects and data kinds.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>ReadHeader
+    ReadDecodedHeaderLine
+        ReadRawHeaderLine
+        DecodeHeaderLine
+        StripTrailingCR
+
+    ParseFlags
+        AppendFlag
+
+    ParseSizeField
+
+    ReadVariablesSection
+        ParseVariableLine
+            RawIsVariableTypeToken
+</pre></div>
+</div>
+<p>The header parser fills:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>title
+date
+plotname
+flags / flagsMask
+numVariables
+numPoints
+variables[]
+</pre></div>
+</div>
+<p>It does not read vector values.</p>
+</section>
+<section id="generic-binary-open-path">
+<span id="r-notes-and-internals-generic-binary-open-path"></span><span id="r-3a3anotes20and20internalsqzgeneric20binary20open20path"></span><h3>Generic binary open path<a class="headerlink" href="#generic-binary-open-path" title="Link to this heading">¶</a></h3>
+<p>The generic dialect is used for SPICE3-style raw files, including ngspice and Xyce-style files.</p>
+<p>The generic binary open path is:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawHeaderResolveVariableLayout(..., RAW_DIALECT_GENERIC, 0)
+        ResolveDefaultStorage
+        RawSetVariableLayout for each variable
+
+    ComputeBinaryByteCount
+        dataBytes = numPoints * pointStrideBytes
+
+    nextOffset = dataOffset + dataBytes
+    Tcl_Seek(chan, nextOffset, SEEK_SET)
+
+    RawFileAppendPlotMove
+</pre></div>
+</div>
+<p>For generic binary files, the data block border is calculated entirely from the header:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="n">dataOffset</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">offset</span><span class="w"> </span><span class="n">immediately</span><span class="w"> </span><span class="n">after</span><span class="w"> </span><span class="n">Binary</span><span class="o">:</span>
+<span class="n">dataBytes</span><span class="w">   </span><span class="o">=</span><span class="w"> </span><span class="n">No</span><span class="p">.</span><span class="w"> </span><span class="n">Points</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="n">pointStrideBytes</span>
+<span class="n">nextOffset</span><span class="w">  </span><span class="o">=</span><span class="w"> </span><span class="n">dataOffset</span><span class="w"> </span><span class="o">+</span><span class="w"> </span><span class="n">dataBytes</span>
+</pre></div>
+</div>
+<p>The generic binary layout is point-major:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>point 0: var0 var1 var2 ...
+point 1: var0 var1 var2 ...
+point 2: var0 var1 var2 ...
+</pre></div>
+</div>
+<p>For real data, all variables use the same resolved real storage. For complex data, each variable stores a real
+and imaginary component.</p>
+</section>
+<section id="generic-ascii-open-path">
+<span id="r-notes-and-internals-generic-ascii-open-path"></span><span id="r-3a3anotes20and20internalsqzgeneric20ascii20open20path"></span><h3>Generic ASCII open path<a class="headerlink" href="#generic-ascii-open-path" title="Link to this heading">¶</a></h3>
+<p>The generic ASCII open path is:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawHeaderResolveVariableLayout(..., RAW_DIALECT_GENERIC, 0)
+
+    RawPlotScanAsciiValues
+        scan declared No. Points
+        record pointOffsets[]
+
+    RawFileAppendPlotMove
+</pre></div>
+</div>
+<p>For generic ASCII files, the block border is found by scanning the declared number of points from the <code class="docutils literal notranslate"><span class="pre">Values:</span></code>
+block.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dataOffset      = offset after Values:
+pointOffsets[i] = offset of point i
+nextOffset      = channel position after the last scanned point
+dataBytes       = nextOffset - dataOffset
+</pre></div>
+</div>
+<p>The ASCII scan does not fully decode all vectors. It only records point offsets. Actual vector values are
+decoded lazily later.</p>
+<p>This keeps open-time work small while allowing random access by point range.</p>
+</section>
+<section id="ltspice-binary-open-path">
+<span id="r-notes-and-internals-ltspice-binary-open-path"></span><span id="r-3a3anotes20and20internalsqzltspice20binary20open20path"></span><h3>LTspice binary open path<a class="headerlink" href="#ltspice-binary-open-path" title="Link to this heading">¶</a></h3>
+<p>The LTspice dialect is selected with:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="o">-</span>dialect<span class="w"> </span>ltspice<span class="w"> </span>file.raw
+</pre></div>
+</div>
+<p>The LTspice binary path is:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    ReadHeader
+    dataOffset = Tcl_Tell
+
+    RawLtspicePrepareBinaryPlot
+        RawGetChannelSize
+        physicalDataBytes = fileSize - dataOffset
+        RawLtspiceDetectAllDouble
+        RawHeaderResolveVariableLayout(..., RAW_DIALECT_LTSPICE, allDouble)
+        physicalPoints = physicalDataBytes / pointStrideBytes
+        update header.numPoints to physicalPoints
+        update dataBytes and nextOffset
+
+    RawLtspiceAppendSplitBinaryPlots
+        if not stepped:
+            RawFileAppendPlotMove
+
+        if stepped:
+            split into pseudo-plots
+</pre></div>
+</div>
+<p>LTspice binary block borders are calculated from the physical file size:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dataOffset          = offset immediately after Binary:
+physicalDataBytes   = fileSize - dataOffset
+nextOffset          = fileSize
+</pre></div>
+</div>
+<p>This is needed because LTspice stepped data is stored as one physical data block, not as multiple complete
+raw-file plots.</p>
+<p>LTspice binary storage detection</p>
+<p>LTspice real binary data may use two layouts.</p>
+<p>Normal mixed layout:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>variable 0: double
+variable 1: float
+variable 2: float
+...
+</pre></div>
+</div>
+<p>All-double layout:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>variable 0: double
+variable 1: double
+variable 2: double
+...
+</pre></div>
+</div>
+<p>The storage mode is inferred by <code class="docutils literal notranslate"><span class="pre">RawLtspiceDetectAllDouble()</span></code>.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawLtspiceDetectAllDouble
+    RawLtspiceCandidateStrides
+
+    mixedStride  = 8 + (numVariables - 1) * 4
+    doubleStride = numVariables * 8
+
+    compare physicalDataBytes with:
+        numPoints * mixedStride
+        numPoints * doubleStride
+
+    for stepped files:
+        also allow physicalDataBytes to be an integer multiple
+        of the declared per-step byte count
+</pre></div>
+</div>
+<p>Complex LTspice binary data is treated as double-based complex storage:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>real component: double
+imag component: double
+</pre></div>
+</div>
+<p>LTspice FastAccess files are rejected because their storage order is variable-major instead of point-major.</p>
+</section>
+<section id="ltspice-ascii-open-path">
+<span id="r-notes-and-internals-ltspice-ascii-open-path"></span><span id="r-3a3anotes20and20internalsqzltspice20ascii20open20path"></span><h3>LTspice ASCII open path<a class="headerlink" href="#ltspice-ascii-open-path" title="Link to this heading">¶</a></h3>
+<p>LTspice ASCII files use text values, so the LTspice binary mixed float/double layout is irrelevant.</p>
+<p>For non-stepped LTspice ASCII files, the path is the same as generic ASCII:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    ReadHeader
+    RawHeaderResolveVariableLayout(..., RAW_DIALECT_GENERIC, 0)
+    RawPlotScanAsciiValues
+    RawFileAppendPlotMove
+</pre></div>
+</div>
+<p>For stepped LTspice ASCII files, the path is:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
+    ReadHeader
+    RawHeaderResolveVariableLayout(..., RAW_DIALECT_GENERIC, 0)
+
+    RawLtspiceAppendSplitAsciiPlots
+        RawLtspiceScanAllAsciiValues
+            RawAsciiFindNextContentLine
+            RawAsciiReadAxisAtCurrentPoint
+            RawAppendAsciiScannedPoint
+
+        split into pseudo-plots
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">RawLtspiceScanAllAsciiValues()</span></code> scans the whole physical <code class="docutils literal notranslate"><span class="pre">Values:</span></code> block until EOF or the beginning of the
+next raw header.</p>
+<p>The ASCII block border is determined as:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>dataOffset = offset after Values:
+nextOffset = EOF or offset of next &quot;Title:&quot; header
+dataBytes  = nextOffset - dataOffset
+</pre></div>
+</div>
+<p>During this scan, the reader records:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>pointOffsets[i] = file offset of point i
+axisValues[i]   = decoded scalar value of variable 0 at point i
+</pre></div>
+</div>
+<p>The full vector data is still not stored. Only offsets and axis values are collected.</p>
+</section>
+<section id="ltspice-stepped-plot-splitting">
+<span id="r-notes-and-internals-ltspice-stepped-plot-splitting"></span><span id="r-3a3anotes20and20internalsqzltspice20stepped20plot20splitting"></span><h3>LTspice stepped plot splitting<a class="headerlink" href="#ltspice-stepped-plot-splitting" title="Link to this heading">¶</a></h3>
+<p>LTspice stepped data is normalized into several indexed <code class="docutils literal notranslate"><span class="pre">RawPlot</span></code> objects.</p>
+<p>The .log file is not read. Step parameter names and values are not reconstructed. The reader only separates the
+physical raw data into step-sized plots.</p>
+<p>After splitting:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>physical LTspice data block
+    step 0 data
+    step 1 data
+    step 2 data
+</pre></div>
+</div>
+<p>becomes:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawFile
+    plots[0] -&gt; step 0
+    plots[1] -&gt; step 1
+    plots[2] -&gt; step 2
+</pre></div>
+</div>
+<p>The public API sees these as ordinary plots:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nv">$handle</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">0</span><span class="w"> </span>time
+<span class="nv">$handle</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">1</span><span class="w"> </span>time
+<span class="nv">$handle</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="o">-</span>plot<span class="w"> </span><span class="mi">2</span><span class="w"> </span><span class="o">-</span>all
+</pre></div>
+</div>
+</section>
+<section id="ltspice-transient-step-splitting">
+<span id="r-notes-and-internals-ltspice-transient-step-splitting"></span><span id="r-3a3anotes20and20internalsqzltspice20transient20step20splitting"></span><h3>LTspice transient step splitting<a class="headerlink" href="#ltspice-transient-step-splitting" title="Link to this heading">¶</a></h3>
+<p>Transient data is detected by <code class="docutils literal notranslate"><span class="pre">RawLtspiceIsTransientPlot()</span></code>.</p>
+<p>A plot is treated as transient if either:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>plotname contains &quot;Transient&quot;
+</pre></div>
+</div>
+<p>or:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>first variable name is &quot;time&quot;
+</pre></div>
+</div>
+<p>Transient steps are detected by axis reset.</p>
+<p>For binary data:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawLtspiceFindAxisResetSteps(..., transientMode = 1)
+    read binary points in chunks
+    RawDecodeBinaryAxisValue
+    if currentAxis &lt;= previousAxis:
+        start new step
+</pre></div>
+</div>
+<p>For ASCII data:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawLtspiceBuildAxisResetStepsFromValues(..., transientMode = 1)
+    if axisValues[i] &lt;= axisValues[i - 1]:
+        start new step
+</pre></div>
+</div>
+<p>The rule is intentionally simple for transient data because time should increase within one transient run and
+reset at the beginning of the next step.</p>
+</section>
+<section id="ltspice-non-transient-step-splitting">
+<span id="r-notes-and-internals-ltspice-non-transient-step-splitting"></span><span id="r-3a3anotes20and20internalsqzltspice20non2dtransient20step20splitting"></span><h3>LTspice non-transient step splitting<a class="headerlink" href="#ltspice-non-transient-step-splitting" title="Link to this heading">¶</a></h3>
+<p>For non-transient stepped data, fixed-size splitting is preferred.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawLtspiceAppendSplitBinaryPlots
+RawLtspiceAppendSplitAsciiPlots
+
+    if not transient
+       and declaredPoints &gt; 0
+       and totalPhysicalPoints &gt; declaredPoints
+       and totalPhysicalPoints % declaredPoints == 0:
+
+        RawLtspiceBuildFixedSteps
+</pre></div>
+</div>
+<p>This uses the original No. Points header value as the per-step point count.</p>
+<p>Example:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>declared No. Points: 101
+physical points:    303
+
+step 0: points   0..100
+step 1: points 101..201
+step 2: points 202..302
+</pre></div>
+</div>
+<p>If fixed-size splitting is not possible, the reader falls back to direction-aware axis reset detection.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawAxisStartsNewStep
+</pre></div>
+</div>
+<p>For increasing sweeps:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>current &lt;= previous  -&gt; new step
+</pre></div>
+</div>
+<p>For decreasing sweeps:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>current &gt;= previous  -&gt; new step
+</pre></div>
+</div>
+<p>The direction is detected from the first unequal pair of axis values in the current step.</p>
+<p>This avoids incorrectly handling sweeps such as:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>step 0:  10,  5,  0, -5, -10
+step 1:  10,  5,  0, -5, -10
+</pre></div>
+</div>
+<p>where the axis reset is an increase, not a decrease.</p>
+</section>
+<section id="binary-pseudo-plot-construction">
+<span id="r-notes-and-internals-binary-pseudo-plot-construction"></span><span id="r-3a3anotes20and20internalsqzbinary20pseudo2dplot20construction"></span><h3>Binary pseudo-plot construction<a class="headerlink" href="#binary-pseudo-plot-construction" title="Link to this heading">¶</a></h3>
+<p>Binary LTspice step plots are created by <code class="docutils literal notranslate"><span class="pre">RawLtspiceAppendSegmentPlots()</span></code>.</p>
+<p>For each detected step:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>stepPlot.header      = clone of base header
+stepPlot.numPoints   = step point count
+stepPlot.dataKind    = DATA_BINARY
+stepPlot.dataOffset  = baseDataOffset + startPoint * pointStrideBytes
+stepPlot.dataBytes   = pointCount * pointStrideBytes
+stepPlot.nextOffset  = dataOffset + dataBytes
+</pre></div>
+</div>
+<p>No binary data is copied. Each pseudo-plot references a byte range inside the original physical data block.</p>
+</section>
+<section id="ascii-pseudo-plot-construction">
+<span id="r-notes-and-internals-ascii-pseudo-plot-construction"></span><span id="r-3a3anotes20and20internalsqzascii20pseudo2dplot20construction"></span><h3>ASCII pseudo-plot construction<a class="headerlink" href="#ascii-pseudo-plot-construction" title="Link to this heading">¶</a></h3>
+<p>ASCII LTspice step plots are created by RawLtspiceAppendAsciiSegmentPlots().</p>
+<p>For each detected step:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>stepPlot.header            = clone of base header
+stepPlot.numPoints         = step point count
+stepPlot.dataKind          = DATA_VALUES
+stepPlot.pointOffsets[]    = copied subset of base pointOffsets[]
+stepPlot.dataOffset        = first point offset in this step
+stepPlot.nextOffset        = next step&#39;s first point offset, or basePlot-&gt;nextOffset
+stepPlot.dataBytes         = nextOffset - dataOffset
+</pre></div>
+</div>
+<p>Only the point-offset array is copied. Textual value data remains in the original file.</p>
+</section>
+<section id="vector-extraction-path">
+<span id="r-notes-and-internals-vector-extraction-path"></span><span id="r-3a3anotes20and20internalsqzvector20extraction20path"></span><h3>Vector extraction path<a class="headerlink" href="#vector-extraction-path" title="Link to this heading">¶</a></h3>
+<p>Vector extraction is lazy. Opening the file builds plot metadata and point indexes, but does not decode every
+vector.</p>
+<section id="single-vector">
+<span id="r-notes-and-internals-single-vector"></span><span id="r-3a3anotes20and20internalsqzsingle20vector"></span><h4>Single vector<a class="headerlink" href="#single-vector" title="Link to this heading">¶</a></h4>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawFileObjCmd
+    vector subcommand
+        RawSelectPlotFromArgs
+        RawPlotFindVariable
+        RawParseRange
+        RawPlotVectorToObj
+            RawPlotReadVectorsToObj
+</pre></div>
+</div>
+</section>
+<section id="multiple-vectors">
+<span id="r-notes-and-internals-multiple-vectors"></span><span id="r-3a3anotes20and20internalsqzmultiple20vectors"></span><h4>Multiple vectors<a class="headerlink" href="#multiple-vectors" title="Link to this heading">¶</a></h4>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawFileObjCmd
+    vectors subcommand
+        RawSelectPlotFromArgs
+        RawPlotResolveVariableList
+            or RawPlotResolveAllVariables
+        RawParseRange
+        RawPlotReadVectorsToObj
+</pre></div>
+</div>
+</section>
+<section id="backend-dispatch">
+<span id="r-notes-and-internals-backend-dispatch"></span><span id="r-3a3anotes20and20internalsqzbackend20dispatch"></span><h4>Backend dispatch<a class="headerlink" href="#backend-dispatch" title="Link to this heading">¶</a></h4>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawPlotReadVectorsToObj
+    if DATA_BINARY:
+        RawPlotBinaryReadVectorsToObj
+
+    if DATA_VALUES:
+        RawPlotAsciiReadVectorsToObj
+</pre></div>
+</div>
+</section>
+<section id="binary-vector-reading">
+<span id="r-notes-and-internals-binary-vector-reading"></span><span id="r-3a3anotes20and20internalsqzbinary20vector20reading"></span><h4>Binary vector reading<a class="headerlink" href="#binary-vector-reading" title="Link to this heading">¶</a></h4>
+<p>Binary vector reading uses point-major offsets.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawPlotBinaryReadVectorsToObj
+    validate range and selected variables
+    allocate one Tcl list per selected variable
+    seek to first requested point
+    read chunks of complete points
+
+    for each point:
+        for each selected variable:
+            pointer = point + variable.offsetBytes
+            RawAppendBinaryValue
+
+    RawBuildVectorResult
+</pre></div>
+</div>
+<p>The binary reader reads complete point records even when only a few variables are requested, because the file
+is stored point-major.</p>
+</section>
+<section id="ascii-vector-reading">
+<span id="r-notes-and-internals-ascii-vector-reading"></span><span id="r-3a3anotes20and20internalsqzascii20vector20reading"></span><h4>ASCII vector reading<a class="headerlink" href="#ascii-vector-reading" title="Link to this heading">¶</a></h4>
+<p>ASCII vector reading uses pointOffsets.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawPlotAsciiReadVectorsToObj
+    validate range and selected variables
+    allocate one Tcl list per selected variable
+    build sparse all-variable output array
+
+    seek to plot-&gt;pointOffsets[firstPoint]
+
+    for each requested point:
+        RawAsciiReadOnePoint
+
+    RawBuildVectorResult
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">RawAsciiReadOnePoint()</span></code> consumes the whole ASCII point, but appends only selected variables.</p>
+<p>For selected-vector reading, unselected entries in the sparse output array are NULL.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>allVecObjs[varIndex] == NULL
+    -&gt; value is parsed/skipped but not appended
+
+allVecObjs[varIndex] != NULL
+    -&gt; value is appended to that variable&#39;s list
+</pre></div>
+</div>
+<p>This keeps ASCII parsing correct for multi-line points and complex values while avoiding unnecessary output
+objects.</p>
+</section>
+<section id="result-construction">
+<span id="r-notes-and-internals-result-construction"></span><span id="r-3a3anotes20and20internalsqzresult20construction"></span><h4>Result construction<a class="headerlink" href="#result-construction" title="Link to this heading">¶</a></h4>
+<p>All vector backends produce one list object per selected variable.</p>
+<p><code class="docutils literal notranslate"><span class="pre">RawBuildVectorResult()</span></code> converts those internal lists to the requested result shape.</p>
+<p>Single-vector result:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RAW_VECTOR_RESULT_LIST
+    -&gt; return vecObjs[0]
+</pre></div>
+</div>
+<p>Dictionary result:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RAW_VECTOR_RESULT_DICT
+    -&gt; return dict:
+           variableName -&gt; valueList
+</pre></div>
+</div>
+<p>The public commands use this as follows:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>vector
+    RAW_VECTOR_RESULT_LIST
+
+vectors
+vectors -all
+allvectors
+    RAW_VECTOR_RESULT_DICT
+</pre></div>
+</div>
+</section>
+</section>
+<section id="ownership-summary">
+<span id="r-notes-and-internals-ownership-summary"></span><span id="r-3a3anotes20and20internalsqzownership20summary"></span><h3>Ownership summary<a class="headerlink" href="#ownership-summary" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">RawFile</span></code> owns:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>channel
+encoding handle
+plot array
+all plot headers
+all ASCII point-offset arrays
+</pre></div>
+</div>
+<p>Each <code class="docutils literal notranslate"><span class="pre">RawPlot</span></code> owns:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawHeader
+pointOffsets, for ASCII plots
+</pre></div>
+</div>
+<p>Pseudo-plots own their cloned headers and, for ASCII pseudo-plots, their own point-offset arrays.</p>
+<p>Pseudo-plots do not copy raw value data. They reference the same open channel using different offsets and point
+ranges.</p>
+</section>
+<section id="summary">
+<span id="r-notes-and-internals-summary"></span><span id="r-3a3anotes20and20internalsqzsummary"></span><h3>Summary<a class="headerlink" href="#summary" title="Link to this heading">¶</a></h3>
+<p>The implementation follows this principle:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Open time:
+    parse headers
+    resolve layout
+    find data-block borders
+    build plot list
+    build ASCII point indexes
+    split LTspice stepped data into pseudo-plots
+
+Read time:
+    seek to requested points
+    decode only requested vectors
+    build Tcl list or dictionary result
+</pre></div>
+</div>
+<p>Generic SPICE3-style files use explicit headers and declared point counts to find plot borders.</p>
+<p>LTspice binary files use physical data size to infer storage layout and point count.</p>
+<p>LTspice stepped files are normalized into ordinary indexed plots, so the rest of the reader can use the same
+vector-reading path for all formats.</p>
 <hr class="docutils" />
 <p class="centered">
 <strong>Copyright (c) George Yashin</strong></p></section>
-</section>
 </section>
 </section>
 
@@ -333,6 +894,32 @@ official file-format specification.</p>
 <li><a class="reference internal" href="#limitations">Limitations</a></li>
 </ul>
 </li>
+</ul>
+</li>
+<li><a class="reference internal" href="#tclsimrawreader-implementation-overview">tclsimrawreader implementation overview</a><ul>
+<li><a class="reference internal" href="#core-data-model">Core data model</a></li>
+<li><a class="reference internal" href="#open-path">Open path</a></li>
+<li><a class="reference internal" href="#header-parsing-path">Header parsing path</a></li>
+<li><a class="reference internal" href="#generic-binary-open-path">Generic binary open path</a></li>
+<li><a class="reference internal" href="#generic-ascii-open-path">Generic ASCII open path</a></li>
+<li><a class="reference internal" href="#ltspice-binary-open-path">LTspice binary open path</a></li>
+<li><a class="reference internal" href="#ltspice-ascii-open-path">LTspice ASCII open path</a></li>
+<li><a class="reference internal" href="#ltspice-stepped-plot-splitting">LTspice stepped plot splitting</a></li>
+<li><a class="reference internal" href="#ltspice-transient-step-splitting">LTspice transient step splitting</a></li>
+<li><a class="reference internal" href="#ltspice-non-transient-step-splitting">LTspice non-transient step splitting</a></li>
+<li><a class="reference internal" href="#binary-pseudo-plot-construction">Binary pseudo-plot construction</a></li>
+<li><a class="reference internal" href="#ascii-pseudo-plot-construction">ASCII pseudo-plot construction</a></li>
+<li><a class="reference internal" href="#vector-extraction-path">Vector extraction path</a><ul>
+<li><a class="reference internal" href="#single-vector">Single vector</a></li>
+<li><a class="reference internal" href="#multiple-vectors">Multiple vectors</a></li>
+<li><a class="reference internal" href="#backend-dispatch">Backend dispatch</a></li>
+<li><a class="reference internal" href="#binary-vector-reading">Binary vector reading</a></li>
+<li><a class="reference internal" href="#ascii-vector-reading">ASCII vector reading</a></li>
+<li><a class="reference internal" href="#result-construction">Result construction</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#ownership-summary">Ownership summary</a></li>
+<li><a class="reference internal" href="#summary">Summary</a></li>
 </ul>
 </li>
 </ul>
