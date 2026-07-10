@@ -1,5 +1,120 @@
 #include "tclsimrawreader.h"
 
+//** forward declarations
+static void RawHeaderInit(RawHeader *h);
+static void RawHeaderFree(RawHeader *h);
+static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src);
+static void RawHeaderMove(RawHeader *dst, RawHeader *src);
+static void RawPlotInit(RawPlot *p);
+static void RawPlotFree(RawPlot *p);
+static void RawPlotMove(RawPlot *dst, RawPlot *src);
+static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot);
+static void RawFileDeleteProc(void *clientData);
+static char *StrDupLen(const char *s, Tcl_Size len);
+static const char *SkipSpace(const char *s);
+static Tcl_Size TrimmedLen(const char *s);
+static int SetStringField(char **fieldPtr, const char *value);
+static int StartsWith(const char *s, const char *prefix);
+static int NextToken(const char **pPtr, const char **startPtr, Tcl_Size *lenPtr);
+static const char *SkipToken(const char *p);
+static int ParseSizeField(Tcl_Interp *interp, const char *s, Tcl_Size *outPtr);
+static int RawMulSize(Tcl_Interp *interp, Tcl_Size a, Tcl_Size b, const char *message, Tcl_Size *outPtr);
+static int DetectEncoding(Tcl_Interp *interp, Tcl_Channel chan, EncKind *kindPtr, Tcl_Encoding *encPtr);
+static int ReadRawHeaderLine(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_DString *rawLinePtr);
+static int DecodeHeaderLine(Tcl_Interp *interp, Tcl_Encoding enc, Tcl_DString *rawLinePtr, Tcl_DString *utfLinePtr);
+static int ReadDecodedHeaderLine(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                 Tcl_DString *utfLinePtr);
+static void StripTrailingCR(Tcl_DString *dsPtr);
+static int AppendFlag(Tcl_Interp *interp, RawHeader *h, const char *start, Tcl_Size len);
+static int ParseFlags(Tcl_Interp *interp, RawHeader *h, const char *value);
+static int RawIsVariableTypeToken(const char *start, Tcl_Size len);
+static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *v);
+static int ReadVariablesSection(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h);
+static RawHeaderStatus ReadHeader(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
+                                  DataKind *dataKindPtr);
+static int ResolveDefaultStorage(Tcl_Interp *interp, RawHeader *h);
+static int RawSetVariableLayout(Tcl_Interp *interp, RawHeader *h, Tcl_Size index, RawValueStorage storage,
+                                Tcl_Size valueBytes, Tcl_Size *offsetPtr);
+static int RawHeaderResolveVariableLayout(Tcl_Interp *interp, RawHeader *h, RawDialect dialect, int ltspiceAllDouble);
+static int ComputeBinaryByteCount(Tcl_Interp *interp, const RawHeader *h, Tcl_Size *nbytesPtr);
+static Tcl_Obj *RawHeaderToDictObj(const RawHeader *h);
+static const char *RawDataKindName(DataKind kind);
+static Tcl_Obj *RawPlotSummaryObj(const RawPlot *plot, Tcl_Size index);
+static int RawBuildVectorResult(Tcl_Interp *interp, RawHeader *h, Tcl_Size numVars, Tcl_Size *varIndexes,
+                                Tcl_Obj **vecObjs, RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static void RawFreeVectorObjects(Tcl_Obj **vecObjs, Tcl_Size numVars);
+static double ReadLEFloat32AsDouble(const unsigned char *p);
+static double ReadLEFloat64(const unsigned char *p);
+static int RawBinaryReadExactBytes(Tcl_Interp *interp, Tcl_Channel chan, unsigned char *buf, Tcl_Size nbytes);
+static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const unsigned char *p);
+static int RawParseAsciiDoubleToken(Tcl_Interp *interp, const char *start, Tcl_Size len, double *valuePtr);
+static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const char *start,
+                               Tcl_Size len);
+static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
+                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs);
+static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawPlot *plot);
+static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr);
+static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr);
+static int RawPlotResolveAllVariables(Tcl_Interp *interp, RawPlot *plot, Tcl_Size *numVarsPtr,
+                                      Tcl_Size **varIndexesPtr);
+static int RawPlotBinaryReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                         Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                         RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static int RawPlotAsciiReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                        Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                        RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static int RawPlotReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars,
+                                   Tcl_Size *varIndexes, Tcl_Size firstPoint, Tcl_Size count,
+                                   RawVectorResultMode resultMode, Tcl_Obj **objPtr);
+static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size varIndex, Tcl_Size firstPoint,
+                              Tcl_Size count, Tcl_Obj **objPtr);
+static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr);
+static int RawLtspiceCandidateStrides(Tcl_Interp *interp, RawHeader *h, Tcl_Size *mixedStridePtr,
+                                      Tcl_Size *doubleStridePtr);
+static int RawLtspiceDetectAllDouble(Tcl_Interp *interp, RawHeader *h, Tcl_Size physicalDataBytes, int *allDoublePtr);
+static int RawLtspicePrepareBinaryPlot(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot,
+                                       Tcl_Size *declaredPointsPtr);
+static double RawDecodeBinaryAxisValue(const unsigned char *pointPtr, RawHeader *h);
+static int RawAppendStepBoundary(Tcl_Interp *interp, Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *capacityPtr,
+                                 Tcl_Size *numStepsPtr, Tcl_Size startPoint);
+static int RawLtspiceFindAxisResetSteps(Tcl_Interp *interp, Tcl_Channel chan, RawPlot *plot, int transientMode,
+                                        Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr);
+static int RawAxisStartsNewStep(double previous, double current, RawAxisDirection *directionPtr);
+static int RawLtspiceBuildFixedSteps(Tcl_Interp *interp, Tcl_Size totalPoints, Tcl_Size pointsPerStep,
+                                     Tcl_Size **startsPtr, Tcl_Size **countsPtr, Tcl_Size *numStepsPtr);
+static int RawLtspiceIsTransientPlot(const RawHeader *h);
+static int RawLtspiceAppendSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size *starts,
+                                        Tcl_Size *counts, Tcl_Size numSteps);
+static int RawLtspiceAppendSplitBinaryPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                            Tcl_Size declaredPoints);
+static int RawAsciiFindNextContentLine(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                       Tcl_WideInt *offsetPtr, int *headerPtr, int *eofPtr);
+static int RawAsciiAxisObjToDouble(Tcl_Interp *interp, Tcl_Obj *valueObj, double *axisPtr);
+static int RawAsciiReadAxisAtCurrentPoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                          RawHeader *h, double *axisPtr);
+static int RawAppendAsciiScannedPoint(Tcl_Interp *interp, Tcl_WideInt **offsetsPtr, double **axisValuesPtr,
+                                      Tcl_Size *capacityPtr, Tcl_Size *numPointsPtr, Tcl_WideInt offset,
+                                      double axisValue);
+static int RawLtspiceScanAllAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc,
+                                        RawPlot *plot, double **axisValuesPtr);
+static int RawLtspiceBuildAxisResetStepsFromValues(Tcl_Interp *interp, const double *axisValues, Tcl_Size totalPoints,
+                                                   int transientMode, Tcl_Size **startsPtr, Tcl_Size **countsPtr,
+                                                   Tcl_Size *numStepsPtr);
+static int RawLtspiceAppendAsciiSegmentPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot,
+                                             Tcl_WideInt *allPointOffsets, Tcl_Size totalPoints, Tcl_Size *starts,
+                                             Tcl_Size *counts, Tcl_Size numSteps);
+static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size declaredPoints);
+static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
+                            Tcl_Obj **fileNameObjPtr);
+static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
+static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
+                         Tcl_Size *fromPtr, Tcl_Size *countPtr);
+static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
+                                 Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr);
+static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
+static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
+
 //** Header/object lifetime helpers
 //***  RawHeaderInit function
 /*
@@ -91,6 +206,33 @@ static void RawHeaderFree(RawHeader *h) {
 }
 
 //***  RawHeaderClone function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawHeaderClone --
+ *
+ *      Creates a deep copy of a RawHeader.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp     - Interpreter used for error reporting.
+ *      RawHeader *dst         - Destination header to initialize and fill.
+ *      const RawHeader *src   - Source header to copy.
+ *
+ * Results:
+ *      Returns TCL_OK if the header is cloned successfully.
+ *      Returns TCL_ERROR if an array allocation would overflow.
+ *
+ * Side Effects:
+ *      Initializes dst.
+ *      Allocates owned copies of string fields, flags, and variables.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      On failure, any partially cloned storage in dst is released.
+ *      The cloned header must be released with RawHeaderFree().
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
 static int RawHeaderClone(Tcl_Interp *interp, RawHeader *dst, const RawHeader *src) {
     RawHeaderInit(dst);
     dst->flagsMask = src->flagsMask;
