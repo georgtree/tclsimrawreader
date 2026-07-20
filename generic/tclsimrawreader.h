@@ -30,11 +30,17 @@ static const char *types[] = {"time",
                               "pole",
                               "zero",
                               "s-param",
+                              "param",
                               "temp-sweep",
                               "res-sweep",
                               "phase",
                               "decibel",
                               "device_current",
+                              "unknown",
+                              "notype",
+                              "s-parameter",
+                              "h-parameter",
+                              "subckt_current",
                               NULL};
 
 typedef enum { ENC_KIND_UTF8, ENC_KIND_UTF16LE } EncKind;

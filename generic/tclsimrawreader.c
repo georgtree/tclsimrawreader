@@ -1220,7 +1220,7 @@ static int ParseFlags(Tcl_Interp *interp, RawHeader *h, const char *value) {
  *      None.
  *
  * Notes:
- *      The comparison is byte-wise and case-sensitive.
+ *      The comparison is byte-wise and case-insensitive.
  *      The token is a pointer/length pair and does not need to be NUL-terminated.
  *      Add simulator-specific type names to the static types[] table if needed.
  *
@@ -1229,7 +1229,16 @@ static int ParseFlags(Tcl_Interp *interp, RawHeader *h, const char *value) {
 static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
     for (int i = 0; types[i] != NULL; i++) {
         size_t n = strlen(types[i]);
-        if ((Tcl_Size)n == len && strncmp(start, types[i], n) == 0) {
+        if ((Tcl_Size)n != len) {
+            continue;
+        }
+        size_t j;
+        for (j = 0; j < n; j++) {
+            if (tolower((unsigned char)start[j]) != tolower((unsigned char)types[i][j])) {
+                break;
+            }
+        }
+        if (j == n) {
             return 1;
         }
     }
@@ -1243,7 +1252,7 @@ static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
  * ParseVariableLine --
  *
  *      Parses one Variables-section entry into a RawVariable structure.
- *      Variable names may contain whitespace; the type is found by scanning for a recognized type token.
+ *      Variable names may contain whitespace, and the variable type may be omitted.
  *
  * Parameters:
  *      Tcl_Interp *interp - Interpreter used for error reporting and numeric parsing.
@@ -1252,17 +1261,22 @@ static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
  *
  * Results:
  *      Returns TCL_OK if the line is parsed successfully.
- *      Returns TCL_ERROR if the index, name, or recognized type token is missing or invalid.
+ *      Returns TCL_ERROR if the index or name is missing or invalid, or if an unknown type cannot be separated from
+ *      the variable name by tab delimiters.
  *
  * Side Effects:
  *      Clears v with memset().
- *      Allocates owned strings for v->name and v->type.
+ *      Allocates an owned string for v->name.
+ *      Allocates an owned string for v->type when a non-empty type is present.
  *      Sets the interpreter result on malformed input.
  *
  * Notes:
  *      The first token is interpreted as the variable index.
- *      The type is detected with RawIsVariableTypeToken(); later attributes are ignored.
- *      The search for the type starts after the first name token, so one-token names such as "frequency" are allowed.
+ *      Recognized variable types are matched case-insensitively with RawIsVariableTypeToken().
+ *      The recognized-type search starts after the first name token, so one-token names such as "frequency" are
+ *      allowed.
+ *      If no recognized type is found, an explicit tab-separated name/type boundary is required.
+ *      An empty tab-separated type field is accepted and leaves v->type set to NULL.
  *      Stored strings are owned by RawVariable and must be released by RawHeaderFree().
  *      The input line is borrowed and is not modified.
  *
@@ -1271,6 +1285,7 @@ static int RawIsVariableTypeToken(const char *start, Tcl_Size len) {
 static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *v) {
     const char *p = line;
     const char *idxStart;
+    const char *fieldsStart;
     const char *restStart;
     const char *scan;
     const char *typeStart = NULL;
@@ -1301,10 +1316,14 @@ static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *
      *     v(m1#body diode)
      *
      * Therefore we cannot parse the name as a single whitespace token.
+     *
+     * Preserve the original position after the index because SkipSpace()
+     * removes tab separators needed by the fallback parser.
      */
+    fieldsStart = p;
     restStart = SkipSpace(p);
     if (*restStart == '\0') {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("Variables entry has no name and type", -1));
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("Variables entry has no variable name", -1));
         return TCL_ERROR;
     }
     /*
@@ -1332,8 +1351,54 @@ static int ParseVariableLine(Tcl_Interp *interp, const char *line, RawVariable *
         }
     }
     if (typeStart == NULL) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("Variables entry has no recognized variable type", -1));
-        return TCL_ERROR;
+        const char *firstTab;
+        const char *secondTab;
+        const char *tabNameStart;
+        const char *tabNameEnd;
+        const char *tabTypeStart;
+        const char *tabTypeEnd;
+        const char *lineEnd = line + strlen(line);
+        /*
+         * No known type was found. Require an explicit tab-separated
+         * name/type boundary:
+         *
+         *      index<TAB>name<TAB>type
+         *
+         * The type field may be empty.
+         */
+        firstTab = strchr(fieldsStart, '\t');
+        secondTab = firstTab ? strchr(firstTab + 1, '\t') : NULL;
+        if (secondTab == NULL) {
+            Tcl_SetObjResult(
+                interp, Tcl_NewStringObj("Variables entry has no recognized type or tab-separated type field", -1));
+            return TCL_ERROR;
+        }
+        tabNameStart = firstTab + 1;
+        tabNameEnd = secondTab;
+        while (tabNameStart < tabNameEnd && isspace((unsigned char)*tabNameStart)) {
+            tabNameStart++;
+        }
+        while (tabNameEnd > tabNameStart && isspace((unsigned char)tabNameEnd[-1])) {
+            tabNameEnd--;
+        }
+        if (tabNameStart == tabNameEnd) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("Variables entry has empty variable name", -1));
+            return TCL_ERROR;
+        }
+        tabTypeStart = secondTab + 1;
+        tabTypeEnd = lineEnd;
+        while (tabTypeStart < tabTypeEnd && isspace((unsigned char)*tabTypeStart)) {
+            tabTypeStart++;
+        }
+        while (tabTypeEnd > tabTypeStart && isspace((unsigned char)tabTypeEnd[-1])) {
+            tabTypeEnd--;
+        }
+        v->index = index;
+        v->name = StrDupLen(tabNameStart, (Tcl_Size)(tabNameEnd - tabNameStart));
+        if (tabTypeStart < tabTypeEnd) {
+            v->type = StrDupLen(tabTypeStart, (Tcl_Size)(tabTypeEnd - tabTypeStart));
+        }
+        return TCL_OK;
     }
     nameLen = (Tcl_Size)(nameEnd - restStart);
     if (nameLen <= 0) {
