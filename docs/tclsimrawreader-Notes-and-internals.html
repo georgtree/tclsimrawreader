@@ -40,14 +40,17 @@
 <span id="r-notes-and-internals"></span><span id="r-notes20and20internals"></span><span id="r-namespaceqz3a3anotes20and20internals"></span><h1>Notes and internals<a class="headerlink" href="#notes-and-internals" title="Link to this heading">¶</a></h1>
 <section id="optional-numeric-output-adapter">
 <span id="r-notes-and-internals-optional-numeric-output-adapter"></span><span id="r-3a3anotes20and20internalsqzoptional20numeric20output20adapter"></span><h2>Optional numeric output adapter<a class="headerlink" href="#optional-numeric-output-adapter" title="Link to this heading">¶</a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">tclsimrawreaderRbc.c</span></code> contains the conditional RBC headers, stub initialization, reversible name encoding,
+<p><code class="docutils literal notranslate"><span class="pre">tclsimrawreaderRbc.c</span></code> contains the conditional RBC headers, stub initialization, literal names with a collision-free encoding fallback,
 collision checks and publication. <code class="docutils literal notranslate"><span class="pre">RawOutputOptions</span></code> records handle defaults; read commands copy it before
 parsing overrides. <code class="docutils literal notranslate"><span class="pre">RawNumericColumn</span></code> buffers hold decoded doubles, interleaved for complex samples.</p>
 <p>The list readers retain their result representation. The vector reader reuses binary layout metadata and
 ASCII token decoding, but writes numeric buffers instead of per-sample Tcl objects. Real buffers transfer
 to RBC with <code class="docutils literal notranslate"><span class="pre">TCL_DYNAMIC</span></code>; complex buffers are packed into the public <code class="docutils literal notranslate"><span class="pre">Rbc_Complex</span></code> representation. Creation
-uses RBC’s Tcl command with <code class="docutils literal notranslate"><span class="pre">-variable</span> <span class="pre">{}</span></code> because the current public creation stubs default real vectors to
-automatic array mapping. No Tcl script is assembled from raw names; creation uses <code class="docutils literal notranslate"><span class="pre">Tcl_EvalObjv</span></code>.</p>
+uses RBC’s Tcl command with <code class="docutils literal notranslate"><span class="pre">-literal</span> <span class="pre">true</span> <span class="pre">-variable</span> <span class="pre">{}</span></code> so names such as <code class="docutils literal notranslate"><span class="pre">v(1)</span></code> cannot be parsed as size
+specifications and ordinary real names cannot create mapped arrays. No Tcl script is assembled from raw
+names; creation uses <code class="docutils literal notranslate"><span class="pre">Tcl_EvalObjv</span></code>. Safe literal names retain their spelling; unsupported names, namespace
+separators, and the reserved <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> prefix are encoded as <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> plus hexadecimal UTF-8 bytes. This keeps
+literal and encoded names disjoint and confines creation to the read caller’s namespace.</p>
 <p>All selected data is decoded before publication. Known collisions and type mismatches are preflighted.
 Newly created commands are removed if publication fails; existing vectors are never deleted. Client
 notifications can execute reentrant application code, so callback-induced failures are not fully atomic.

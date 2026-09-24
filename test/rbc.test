@@ -38,17 +38,22 @@ if {$haveVectors} {
     namespace eval ::rawVectorTests {}
     proc ::rawVectorTests::ReadColumns {r plot selection args} {
         namespace eval ::rawVectorTests::data {}
-        set names [namespace eval ::rawVectorTests::data \
+        set names [namespace eval ::rawVectorTests::data\
                        [list $r vectors -plot $plot $selection -output vector {*}$args]]
         set types {}
         foreach variable [dict get [$r header -plot $plot] variables] {
-            dict set types [dict get $variable name] [expr {[dict get $variable storage] eq "complex128" ? "complex" : "real"}]
+            dict set types [dict get $variable name]\
+                    [expr {[dict get $variable storage] eq "complex128" ? "complex" : "real"}]
         }
         set values {}
         try {
             dict for {rawName command} $names {
-                if {[$command variable] ne {}} {error "unexpected array mapping"}
-                if {[$command type] ne [dict get $types $rawName]} {error "wrong vector numeric type"}
+                if {[$command variable] ne {}} {
+                    error "unexpected array mapping"
+                }
+                if {[$command type] ne [dict get $types $rawName]} {
+                    error "wrong vector numeric type"
+                }
                 dict set values $rawName [$command index :]
             }
         } finally {
@@ -70,12 +75,18 @@ if {$haveVectors} {
                     for {set plot 0} {$plot < $plotCount} {incr plot} {
                         set expected [$r vectors -plot $plot -all]
                         set actual [::rawVectorTests::ReadColumns $r $plot -all]
-                        if {$expected ne $actual} {set matches 0; break}
+                        if {$expected ne $actual} {
+                            set matches 0
+                            break
+                        }
                         set selection [lrange [$r names -plot $plot] 0 1]
                         set count [expr {min(3, [$r npoints -plot $plot])}]
                         set expected [$r vectors -plot $plot $selection -count $count]
                         set actual [::rawVectorTests::ReadColumns $r $plot $selection -count $count]
-                        if {$expected ne $actual} {set matches 0; break}
+                        if {$expected ne $actual} {
+                            set matches 0 
+                            break
+                        }
                     }
                 } finally {
                     $r close
@@ -100,8 +111,8 @@ if {$haveVectors} {
             list $name $same $defaultUnchanged $errorCode [$name length] [$name variable]
         }]
         set answer
-    } -result {::rawVectorTests::data::v_28out_29 1 1 1 1 {}} -cleanup {
-        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+    } -result {::rawVectorTests::data::v(out) 1 1 1 1 {}} -cleanup {
+        rbc::vector destroy ::rawVectorTests::data::v(out)
     }
 
     test rawOutput-empty {zero-length vectors and empty selection} -setup {
@@ -111,47 +122,48 @@ if {$haveVectors} {
         list [$name length] [$r vectors {} -output vector]
     } -result {0 {}} -cleanup {
         $r close
-        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+        rbc::vector destroy ::rawVectorTests::data::v(out)
     }
 
     test rawOutput-command-collision {replace must not overwrite an unrelated command} -setup {
         set r [::tclsimrawreader::openraw $dcPath]
-        proc ::rawVectorTests::data::v_28out_29 {} {return preserved}
+        proc ::rawVectorTests::data::v(out) {} {return preserved}
     } -body {
-        set code [catch {namespace eval ::rawVectorTests::data \
-                             [list $r vector v(out) -output vector -ifexists replace]} message]
-        list $code $message [::rawVectorTests::data::v_28out_29]
-    } -result {1 {command "::rawVectorTests::data::v_28out_29" already exists and is not an RBC vector} preserved} -cleanup {
+        set code [catch {namespace eval ::rawVectorTests::data\
+                                 [list $r vector v(out) -output vector -ifexists replace]} message]
+        list $code $message [::rawVectorTests::data::v(out)]
+    } -result {1 {command "::rawVectorTests::data::v(out)" already exists and is not an RBC vector} preserved}\
+            -cleanup {
         $r close
-        rename ::rawVectorTests::data::v_28out_29 {}
+        rename ::rawVectorTests::data::v(out) {}
     }
 
     test rawOutput-type-collision {replacement preserves immutable numeric types} -setup {
         set r [::tclsimrawreader::openraw $dcPath]
-        rbc::vector create ::rawVectorTests::data::v_28out_29 -type complex
-        ::rawVectorTests::data::v_28out_29 set {{7 8}}
+        rbc::vector create ::rawVectorTests::data::v(out) -type complex
+        ::rawVectorTests::data::v(out) set {{7 8}}
     } -body {
         set code [catch {namespace eval ::rawVectorTests::data \
                              [list $r vector v(out) -output vector -ifexists replace]} message]
-        list $code $message [::rawVectorTests::data::v_28out_29 index :]
-    } -result {1 {vector "::rawVectorTests::data::v_28out_29" has a different numeric type} {{7.0 8.0}}} -cleanup {
+        list $code $message [::rawVectorTests::data::v(out) index :]
+    } -result {1 {vector "::rawVectorTests::data::v(out)" has a different numeric type} {{7.0 8.0}}} -cleanup {
         $r close
-        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+        rbc::vector destroy ::rawVectorTests::data::v(out)
     }
 
     test rawOutput-scalar {creating a vector leaves an unrelated Tcl scalar untouched} -setup {
         set r [::tclsimrawreader::openraw $dcPath]
-        set ::rawVectorTests::data::v_28out_29 keep
+        set ::rawVectorTests::data::v keep
     } -body {
         set command [namespace eval ::rawVectorTests::data [list $r vector v(out) -output vector -count 1]]
-        list $::rawVectorTests::data::v_28out_29 [$command variable] [$command length]
+        list $::rawVectorTests::data::v [$command variable] [$command length]
     } -result {keep {} 1} -cleanup {
         $r close
-        rbc::vector destroy ::rawVectorTests::data::v_28out_29
-        unset ::rawVectorTests::data::v_28out_29
+        rbc::vector destroy ::rawVectorTests::data::v(out)
+        unset ::rawVectorTests::data::v
     }
 
-    test rawOutput-encoding {encoding is unambiguous and raw names cannot inject namespaces} -setup {
+    test rawOutput-names {literal names remain distinct and raw names cannot inject namespaces} -setup {
         set path [makeFile {Title: names
 Date: today
 Plotname: DC
@@ -171,24 +183,86 @@ Values:
     } -body {
         set names [namespace eval ::rawVectorTests::data [list $r vectors -all -output vector]]
         list [dict keys $names] [dict values $names]
-    } -result {{time v(out) v_28out_29 sub::node} {::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29 ::rawVectorTests::data::v_5F28out_5F29 ::rawVectorTests::data::sub_3A_3Anode}} -cleanup {
+    } -result {{time v(out) v_28out_29 sub::node} {::rawVectorTests::data::time ::rawVectorTests::data::v(out)\
+                                                           ::rawVectorTests::data::v_28out_29\
+                                                           ::rawVectorTests::data::_raw_7375623A3A6E6F6465}} -cleanup {
         $r close
         rbc::vector destroy {*}[dict values $names]
         removeFile raw_output_names.raw
     }
 
+    test rawOutput-literal-complex {numeric suffixes are literal names for complex creation and replacement} -setup {
+        set path [makeFile {Title: literal names
+Date: today
+Plotname: AC
+Flags: complex
+No. Variables: 2
+No. Points: 2
+Variables:
+0 v(1) voltage
+1 v(1)(2:4) voltage
+Values:
+0 1,2 3,4
+1 5,6 7,8
+} raw_output_literal.raw]
+        set r [::tclsimrawreader::openraw $path -output vector]
+    } -body {
+        set names [namespace eval ::rawVectorTests::data [list $r vectors -all]]
+        set values {}
+        foreach command [dict values $names] {
+            lappend values [$command type] [$command index :] [$command variable]
+        }
+        set same [expr {$names eq [namespace eval ::rawVectorTests::data\
+                                     [list $r vectors -all -from 1 -count 1 -ifexists replace]]}]
+        list [dict values $names] $values $same [[dict get $names v(1)(2:4)] index :]\
+             [info commands ::rawVectorTests::data::v]
+    } -result {{::rawVectorTests::data::v(1) ::rawVectorTests::data::v(1)(2:4)}\
+                       {complex {{1.0 2.0} {5.0 6.0}} {} complex {{3.0 4.0} {7.0 8.0}} {}} 1 {{7.0 8.0}} {}} -cleanup {
+        $r close
+        rbc::vector destroy {*}[dict values $names]
+        removeFile raw_output_literal.raw
+    }
+
+    test rawOutput-fallback {fallback is disjoint from literal names and cannot select namespaces} -setup {
+        set rawNames {v(a-b) _raw_7628612D6229 L2:flux sub::node :leading trailing: v(unbalanced v)out v_out}
+        set header "Title: fallback\nDate: today\nPlotname: DC\nFlags: real\nNo.\
+                             Variables: [llength $rawNames]\nNo. Points: 1\nVariables:\n"
+        set i 0
+        foreach name $rawNames {append header "$i $name voltage\n"; incr i}
+        append header "Values:\n0 1 2 3 4 5 6 7 8 9\n"
+        set path [makeFile $header raw_output_fallback.raw]
+        set r [::tclsimrawreader::openraw $path]
+    } -body {
+        set names [namespace eval ::rawVectorTests::data [list $r vectors -all -output vector]]
+        set tails {}
+        set values {}
+        dict for {raw command} $names {
+            lappend tails [namespace tail $command]
+            lappend values [$command index :]
+        }
+        list $tails $values [dict keys $names] [namespace exists ::rawVectorTests::data::sub]
+    } -result {{_raw_7628612D6229 _raw_5F7261775F373632383631324436323239 L2:flux _raw_7375623A3A6E6F6465\
+                        _raw_3A6C656164696E67 _raw_747261696C696E673A _raw_7628756E62616C616E636564\
+                        _raw_76296F7574 v_out} {1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0}\
+                       {v(a-b) _raw_7628612D6229 L2:flux sub::node :leading trailing: v(unbalanced v)out v_out} 0}\
+            -cleanup {
+        $r close
+        rbc::vector destroy {*}[dict values $names]
+        removeFile raw_output_fallback.raw
+    }
+
     test rawOutput-preflight {a late collision does not create any earlier destinations} -setup {
         set r [::tclsimrawreader::openraw $dcPath]
-        rbc::vector create ::rawVectorTests::data::v_28out_29 -variable {}
-        ::rawVectorTests::data::v_28out_29 set {91 92}
+        rbc::vector create ::rawVectorTests::data::v(out) -variable {}
+        ::rawVectorTests::data::v(out) set {91 92}
     } -body {
         set before [lsort [rbc::vector names ::rawVectorTests::data::*]]
         catch {namespace eval ::rawVectorTests::data [list $r vectors -all -output vector]} message
         list [expr {$before eq [lsort [rbc::vector names ::rawVectorTests::data::*]]}] \
-             [::rawVectorTests::data::v_28out_29 index :]
+             [::rawVectorTests::data::v(out) index :]
     } -result {1 {91.0 92.0}} -cleanup {
         $r close
-        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+        rbc::vector destroy ::rawVectorTests::data::v(out)
     }
 
     test rawOutput-read-failure {malformed data does not replace any existing values} -setup {
@@ -206,16 +280,16 @@ Values:
 1 1 bad
 } raw_output_broken.raw]
         set r [::tclsimrawreader::openraw $path]
-        rbc::vector create ::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29 -variable {}
+        rbc::vector create ::rawVectorTests::data::time ::rawVectorTests::data::v(out) -variable {}
         ::rawVectorTests::data::time set {91 92}
-        ::rawVectorTests::data::v_28out_29 set {93 94}
+        ::rawVectorTests::data::v(out) set {93 94}
     } -body {
         set code [catch {namespace eval ::rawVectorTests::data \
                             [list $r vectors -all -output vector -ifexists replace]} message]
-        list $code [::rawVectorTests::data::time index :] [::rawVectorTests::data::v_28out_29 index :]
+        list $code [::rawVectorTests::data::time index :] [::rawVectorTests::data::v(out) index :]
     } -result {1 {91.0 92.0} {93.0 94.0}} -cleanup {
         $r close
-        rbc::vector destroy ::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29
+        rbc::vector destroy ::rawVectorTests::data::time ::rawVectorTests::data::v(out)
         removeFile raw_output_broken.raw
     }
 

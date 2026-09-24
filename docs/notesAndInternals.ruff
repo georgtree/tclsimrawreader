@@ -5,15 +5,18 @@ namespace eval {Notes and internals} {
     variable _ruff_preamble {
         ## Optional numeric output adapter
 
-        `tclsimrawreaderRbc.c` contains the conditional RBC headers, stub initialization, reversible name encoding,
+        `tclsimrawreaderRbc.c` contains the conditional RBC headers, stub initialization, literal names with a collision-free encoding fallback,
         collision checks and publication. `RawOutputOptions` records handle defaults; read commands copy it before
         parsing overrides. `RawNumericColumn` buffers hold decoded doubles, interleaved for complex samples.
 
         The list readers retain their result representation. The vector reader reuses binary layout metadata and
         ASCII token decoding, but writes numeric buffers instead of per-sample Tcl objects. Real buffers transfer
         to RBC with `TCL_DYNAMIC`; complex buffers are packed into the public `Rbc_Complex` representation. Creation
-        uses RBC's Tcl command with `-variable {}` because the current public creation stubs default real vectors to
-        automatic array mapping. No Tcl script is assembled from raw names; creation uses `Tcl_EvalObjv`.
+        uses RBC's Tcl command with `-literal true -variable {}` so names such as `v(1)` cannot be parsed as size
+        specifications and ordinary real names cannot create mapped arrays. No Tcl script is assembled from raw
+        names; creation uses `Tcl_EvalObjv`. Safe literal names retain their spelling; unsupported names, namespace
+        separators, and the reserved `_raw_` prefix are encoded as `_raw_` plus hexadecimal UTF-8 bytes. This keeps
+        literal and encoded names disjoint and confines creation to the read caller's namespace.
 
         All selected data is decoded before publication. Known collisions and type mismatches are preflighted.
         Newly created commands are removed if publication fails; existing vectors are never deleted. Client

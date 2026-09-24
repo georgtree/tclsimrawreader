@@ -40,28 +40,42 @@ int RawRbcInit(Tcl_Interp *interp) {
  *
  * RawRbcName --
  *
- *      Returns an unreferenced Tcl object containing the destination in the caller's current namespace. ASCII
- *      letters, digits and periods are retained; every other UTF-8 byte (including underscore and colon) becomes
- *      _HH. This injective encoding avoids RBC's parentheses/range syntax, namespace injection and Tcl array mapping.
- *      The empty name is represented by _00. Existing raw names remain the keys in dictionary results.
+ *      Returns an unreferenced Tcl object containing the destination in the caller's current namespace. Safe
+ *      literal RBC names retain their spelling, including balanced parentheses and underscores. Names containing
+ *      namespace separators, unsupported characters, unbalanced parentheses or the reserved _raw_ prefix are
+ *      encoded as _raw_ followed by uppercase hexadecimal UTF-8 bytes. Reserving this prefix makes fallback names
+ *      disjoint from literal names. Raw names remain unchanged as dictionary keys; no array variable is mapped.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
 Tcl_Obj *RawRbcName(Tcl_Interp *interp, const char *rawName) {
     static const char hex[] = "0123456789ABCDEF";
     Tcl_Obj *name = Tcl_NewStringObj(Tcl_GetCurrentNamespace(interp)->fullName, -1);
+    Tcl_Size depth = 0;
+    size_t length = strlen(rawName);
+    int literal = (length > 0 && rawName[0] != ':' && rawName[length - 1] != ':' && strstr(rawName, "::") == NULL &&
+                   strncmp(rawName, "_raw_", 5) != 0);
+
+    for (const unsigned char *p = (const unsigned char *)rawName; literal && *p != '\0'; p++) {
+        if (*p == '(') {
+            depth++;
+        } else if (*p == ')' && depth > 0) {
+            depth--;
+        } else if (!((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '_' ||
+                     *p == '.' || *p == ':' || *p == '@')) {
+            literal = 0;
+        }
+    }
     if (strcmp(Tcl_GetString(name), "::") != 0) {
         Tcl_AppendToObj(name, "::", 2);
     }
-    if (*rawName == '\0') {
-        Tcl_AppendToObj(name, "_00", 3);
-    }
-    for (const unsigned char *p = (const unsigned char *)rawName; *p != '\0'; p++) {
-        if ((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') || *p == '.') {
-            Tcl_AppendToObj(name, (const char *)p, 1);
-        } else {
-            char encoded[3] = {'_', hex[*p >> 4], hex[*p & 15]};
-            Tcl_AppendToObj(name, encoded, 3);
+    if (literal && depth == 0) {
+        Tcl_AppendToObj(name, rawName, -1);
+    } else {
+        Tcl_AppendToObj(name, "_raw_", 5);
+        for (const unsigned char *p = (const unsigned char *)rawName; *p != '\0'; p++) {
+            char encoded[2] = {hex[*p >> 4], hex[*p & 15]};
+            Tcl_AppendToObj(name, encoded, 2);
         }
     }
     return name;
@@ -119,8 +133,9 @@ int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *nameObj, int complex, int replace) 
  * RawRbcPublish --
  *
  *      Publishes previously decoded numeric columns. Preflights every destination and prepares complex buffers
- *      before changing data. New vectors are created with -variable {} to avoid mapped Tcl arrays. Real buffers
- *      are transferred directly; complex buffers are packed into RBC's public Rbc_Complex representation.
+ *      before changing data. New vectors use -literal true so numeric names such as v(1) cannot become size
+ *      specifications, and -variable {} to avoid mapped Tcl arrays. Real buffers are transferred directly; complex
+ * buffers are packed into RBC's public Rbc_Complex representation.
  *
  * Parameters:
  *      numVars/names/columns - Selected columns and referenced, fully qualified destination name objects.
@@ -171,18 +186,20 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
             goto done;
         }
         if (!Rbc_VectorExists2(interp, name)) {
-            Tcl_Obj *args[7] = {Tcl_NewStringObj("::rbc::vector", -1),
+            Tcl_Obj *args[9] = {Tcl_NewStringObj("::rbc::vector", -1),
                                 Tcl_NewStringObj("create", -1),
                                 names[i],
                                 Tcl_NewStringObj("-variable", -1),
                                 Tcl_NewObj(),
                                 Tcl_NewStringObj("-type", -1),
-                                Tcl_NewStringObj(columns[i].complex ? "complex" : "real", -1)};
-            for (int j = 0; j < 7; j++) {
+                                Tcl_NewStringObj(columns[i].complex ? "complex" : "real", -1),
+                                Tcl_NewStringObj("-literal", -1),
+                                Tcl_NewBooleanObj(1)};
+            for (int j = 0; j < 9; j++) {
                 Tcl_IncrRefCount(args[j]);
             }
-            int code = Tcl_EvalObjv(interp, 7, args, TCL_EVAL_DIRECT);
-            for (int j = 0; j < 7; j++) {
+            int code = Tcl_EvalObjv(interp, 9, args, TCL_EVAL_DIRECT);
+            for (int j = 0; j < 9; j++) {
                 Tcl_DecrRefCount(args[j]);
             }
             if (code != TCL_OK) {

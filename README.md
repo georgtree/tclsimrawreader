@@ -90,8 +90,9 @@ library is not linked. `--without-rbc` selects the default list-only build. Even
 read lists without RBC installed. `rbc::vector` is required only when vector output is selected. No Tk
 initialization is needed, although the installed RBC binary must have its system library dependencies available.
 
-Use an RBC build with the namespace-safe vector command deletion fix (deletion by Tcl command token), so vectors
-can safely be destroyed from outside their namespace. This does not change the RBC stubs ABI.
+Use an RBC build with literal parenthesized vector names (`vector create -literal true`) and namespace-safe
+vector command deletion. The package version remains `rbc::vector 0.5.0`, so an older build with the same version
+number is insufficient. This upgrade does not change the RBC stubs ABI or the optional `--with-rbc` configuration.
 
 Set handle defaults with `-output list|vector` and `-ifexists error|replace`. Defaults are `list` and `error`.
 Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
@@ -99,10 +100,10 @@ Either option can be overridden for a single `vector` or `vectors` call, without
 ```tcl
 set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error]
 set signal [$raw vector v(out)]
-# -> ::v_28out_29, if called from the global namespace
+# -> ::v(out), if called from the global namespace
 set values [$signal index :]
 set commands [$raw vectors {time v(out)} -ifexists replace]
-# -> time ::time v(out) ::v_28out_29
+# -> time ::time v(out) ::v(out)
 set values [$raw vector v(out) -output list]
 $raw close
 # Created vectors remain alive and are owned by the caller.
@@ -116,22 +117,34 @@ An empty selection returns an empty dictionary. A zero-length range creates an e
 
 ### Destination names and ownership
 
-RBC vector names cannot contain parentheses. Destination names are derived deterministically from the raw name:
-ASCII letters, digits and periods remain unchanged; every other UTF-8 byte becomes `_HH` (uppercase hexadecimal).
-Underscores are escaped too, so distinct raw names cannot collide through encoding. Examples:
+Raw names are preserved whenever they are safe literal RBC names. Balanced parentheses, underscores, periods,
+letters, digits, `@` and single interior colons are retained. Vectors are created with `-literal true`, so numeric
+names such as `v(1)` or `v(1)(2:4)` are never interpreted as length/range specifications. Examples:
 
 | Raw name | Destination tail |
 | --- | --- |
 | `time` | `time` |
-| `v(out)` | `v_28out_29` |
-| `v_28out_29` | `v_5F28out_5F29` |
-| `L2:flux` | `L2_3Aflux` |
+| `v(out)` | `v(out)` |
+| `v(1)` | `v(1)` |
+| `v_28out_29` | `v_28out_29` |
+| `L2:flux` | `L2:flux` |
+| `v(a-b)` | `_raw_7628612D6229` |
+| `sub::node` | `_raw_7375623A3A6E6F6465` |
 
-The destination is in the namespace active when the read command is invoked. Raw colons are encoded, not treated
-as namespace separators. Use `namespace eval ::signals [list $raw vectors -all -output vector]` to choose a
-namespace explicitly (create it first). Newly created vectors have no mapped Tcl array variable, so they neither
-replace ordinary Tcl variables nor interpret raw parentheses as array syntax. New vector indexes start at zero,
-including partial reads. Closing a handle does not destroy its output vectors; use `rbc::vector destroy` when done.
+Names with unsupported characters, unbalanced parentheses, `::`, a leading/trailing colon, or the reserved prefix
+`_raw_` use a fallback: `_raw_` followed by the uppercase hexadecimal UTF-8 bytes of the complete original name.
+The empty name maps to `_raw_`. Reserving this prefix keeps fallback names distinct from literal names; a raw
+name that already begins with `_raw_` is itself encoded. Original dictionary keys are always retained.
+
+The destination is in the namespace active when the read command is invoked. Raw namespace separators are encoded,
+so a raw name cannot select a different namespace. Use `namespace eval ::signals [list $raw vectors -all -output vector]`
+to choose a namespace explicitly (create it first). Newly created vectors have no mapped Tcl array variable:
+use the returned command, for example `$signal index 1:20`, rather than Tcl array substitution `$v(out)(1:20)`.
+New vector indexes start at zero, including partial reads. Closing a handle does not destroy its output vectors;
+use `rbc::vector destroy` when done.
+
+This naming replaces the earlier encoding of every parenthesis and underscore. Existing vectors are not renamed.
+Use returned command names or dictionary values rather than reconstructing names using the old encoding.
 
 ### Collisions and numeric types
 

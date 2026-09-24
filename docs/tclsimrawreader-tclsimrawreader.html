@@ -224,8 +224,10 @@ list of values in list mode, or fully qualified RBC vector command name in vecto
 </dd>
 </dl>
 <p class="rubric">Description</p>
-<p>In vector mode, names are reversibly encoded for RBC (for example <code class="docutils literal notranslate"><span class="pre">v(out)</span></code> becomes <code class="docutils literal notranslate"><span class="pre">v_28out_29</span></code>) and
-qualified in the calling namespace. New vectors have no mapped Tcl arrays and outlive the raw handle.
+<p>In vector mode, safe literal names (including <code class="docutils literal notranslate"><span class="pre">v(out)</span></code> and <code class="docutils literal notranslate"><span class="pre">v(1)</span></code>) are preserved and qualified in the
+calling namespace. Unsupported/namespace-bearing names and names beginning with the reserved <code class="docutils literal notranslate"><span class="pre">_raw_</span></code>
+prefix become <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> plus uppercase hexadecimal UTF-8 bytes. Original dictionary keys are unchanged.
+Requires RBC’s <code class="docutils literal notranslate"><span class="pre">-literal</span> <span class="pre">true</span></code> creation support. New vectors have no mapped arrays and outlive the handle.
 Complex raw data creates complex RBC vectors. Replacement preserves same-type vector identity; an
 unrelated command or a numeric type mismatch is an error. See the start page for naming and ownership.</p>
 <p>Example:</p>
