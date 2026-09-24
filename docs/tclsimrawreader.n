@@ -102,7 +102,7 @@ $rawfile close
 .SH "OPTIONAL RBC VECTOR OUTPUT"
 .PP
 The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency\&. To enable
-real and complex \fIrbc-tk9\fP [URL: https://github\&.com/georgtree/rbc-tk9] output, use Tcl 9 and matching RBC 0\&.5\&.0 headers:
+real and complex \fIrbc-tk9\fP [URL: https://github\&.com/georgtree/rbc-tk9] output, use Tcl 9 and matching RBC 0\&.8\&.0 headers:
 .PP
 .RS 4n
 .nf
@@ -119,7 +119,7 @@ read lists without RBC installed\&. rbc::vector is required only when vector out
 initialization is needed, although the installed RBC binary must have its system library dependencies available\&.
 .PP
 Use an RBC build with literal parenthesized vector names (vector create -literal true) and namespace-safe
-vector command deletion\&. The package version remains rbc::vector 0\&.5\&.0, so an older build with the same version
+vector command deletion\&. The package version remains rbc::vector 0\&.8\&.0, so an older build with the same version
 number is insufficient\&. This upgrade does not change the RBC stubs ABI or the optional --with-rbc configuration\&.
 .PP
 Set handle defaults with -output list|vector and -ifexists error|replace\&. Defaults are list and error\&.
