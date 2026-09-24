@@ -8,41 +8,6 @@
 #include <string.h>
 #include <tcl.h>
 
-static const char *types[] = {"time",
-                              "frequency",
-                              "voltage",
-                              "current",
-                              "power",
-                              "resistance",
-                              "impedance",
-                              "admittance",
-                              "conductance",
-                              "capacitance",
-                              "charge",
-                              "flux",
-                              "temperature",
-                              "noise",
-                              "expression",
-                              "voltage-density",
-                              "current-density",
-                              "voltage^2-density",
-                              "current^2-density",
-                              "pole",
-                              "zero",
-                              "s-param",
-                              "param",
-                              "temp-sweep",
-                              "res-sweep",
-                              "phase",
-                              "decibel",
-                              "device_current",
-                              "unknown",
-                              "notype",
-                              "s-parameter",
-                              "h-parameter",
-                              "subckt_current",
-                              NULL};
-
 typedef enum { ENC_KIND_UTF8, ENC_KIND_UTF16LE } EncKind;
 
 typedef enum { DATA_BINARY, DATA_VALUES } DataKind;
@@ -68,6 +33,24 @@ typedef enum RawValueStorage {
 } RawValueStorage;
 
 typedef enum RawVectorResultMode { RAW_VECTOR_RESULT_LIST, RAW_VECTOR_RESULT_DICT } RawVectorResultMode;
+
+typedef struct RawOutputOptions {
+    int vectors; /* Zero returns lists; nonzero publishes RBC vectors. */
+    int replace; /* Zero rejects collisions; nonzero replaces same-type RBC data. */
+} RawOutputOptions;
+
+typedef struct RawNumericColumn {
+    double *values; /* Owned doubles; complex samples use interleaved real/imaginary components. */
+    Tcl_Size count;
+    Tcl_Size used;
+    int complex;
+} RawNumericColumn;
+
+int RawRbcInit(Tcl_Interp *interp);
+int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNumericColumn *columns, int replace,
+                  int dictionary, Tcl_Obj **resultPtr);
+Tcl_Obj *RawRbcName(Tcl_Interp *interp, const char *rawName);
+int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *name, int complex, int replace);
 
 typedef enum RawDialect { RAW_DIALECT_GENERIC, RAW_DIALECT_LTSPICE } RawDialect;
 
@@ -170,6 +153,7 @@ typedef struct RawFile {
      *-----------------------------------------------------------------------------------------------------------------*/
     Tcl_Channel chan; /* Open raw-file channel, kept for lazy vector/dict reads */
     RawDialect dialect;
+    RawOutputOptions output; /* Defaults copied for each vector/vectors call. */
     EncKind encKind;  /* Detected raw header/text encoding kind */
     Tcl_Encoding enc; /* Tcl encoding handle for decoded text, or NULL when not needed */
 

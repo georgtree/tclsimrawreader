@@ -37,9 +37,25 @@
           <div class="body" role="main">
             
   <section id="notes-and-internals">
-<span id="r-notes-and-internals"></span><span id="r-notes20and20internals"></span><span id="r-3a3anotes20and20internals"></span><h1>Notes and internals<a class="headerlink" href="#notes-and-internals" title="Link to this heading">¶</a></h1>
+<span id="r-notes-and-internals"></span><span id="r-notes20and20internals"></span><span id="r-namespaceqz3a3anotes20and20internals"></span><h1>Notes and internals<a class="headerlink" href="#notes-and-internals" title="Link to this heading">¶</a></h1>
+<section id="optional-numeric-output-adapter">
+<span id="r-notes-and-internals-optional-numeric-output-adapter"></span><span id="r-3a3anotes20and20internalsqzoptional20numeric20output20adapter"></span><h2>Optional numeric output adapter<a class="headerlink" href="#optional-numeric-output-adapter" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">tclsimrawreaderRbc.c</span></code> contains the conditional RBC headers, stub initialization, reversible name encoding,
+collision checks and publication. <code class="docutils literal notranslate"><span class="pre">RawOutputOptions</span></code> records handle defaults; read commands copy it before
+parsing overrides. <code class="docutils literal notranslate"><span class="pre">RawNumericColumn</span></code> buffers hold decoded doubles, interleaved for complex samples.</p>
+<p>The list readers retain their result representation. The vector reader reuses binary layout metadata and
+ASCII token decoding, but writes numeric buffers instead of per-sample Tcl objects. Real buffers transfer
+to RBC with <code class="docutils literal notranslate"><span class="pre">TCL_DYNAMIC</span></code>; complex buffers are packed into the public <code class="docutils literal notranslate"><span class="pre">Rbc_Complex</span></code> representation. Creation
+uses RBC’s Tcl command with <code class="docutils literal notranslate"><span class="pre">-variable</span> <span class="pre">{}</span></code> because the current public creation stubs default real vectors to
+automatic array mapping. No Tcl script is assembled from raw names; creation uses <code class="docutils literal notranslate"><span class="pre">Tcl_EvalObjv</span></code>.</p>
+<p>All selected data is decoded before publication. Known collisions and type mismatches are preflighted.
+Newly created commands are removed if publication fails; existing vectors are never deleted. Client
+notifications can execute reentrant application code, so callback-induced failures are not fully atomic.
+Active raw handles are preserved during calls and freed through <code class="docutils literal notranslate"><span class="pre">Tcl_EventuallyFree</span></code> to tolerate callbacks
+that close the handle. Per-interpreter package initialization always precedes the data read.</p>
+</section>
 <section id="raw-file-format-support">
-<span id="r-notes-and-internals-raw-file-format-support"></span><span id="r-3a3anotes20and20internalsqzraw20file20format20support"></span><h2>Raw File Format Support<a class="headerlink" href="#raw-file-format-support" title="Link to this heading">¶</a></h2>
+<span id="r-notes-and-internals-raw-file-format-support"></span><span id="r-3a3anotes20and20internalsqzraw20file20format20support"></span><h2>Raw file format support<a class="headerlink" href="#raw-file-format-support" title="Link to this heading">¶</a></h2>
 <p>This reader supports two raw-file dialects:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw
 <span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span><span class="o">-</span>dialect<span class="w"> </span>generic<span class="w"> </span>file.raw
@@ -877,7 +893,8 @@ vector-reading path for all formats.</p>
     <h3><a href="index.html">Table of Contents</a></h3>
     <ul>
 <li><a class="reference internal" href="#">Notes and internals</a><ul>
-<li><a class="reference internal" href="#raw-file-format-support">Raw File Format Support</a><ul>
+<li><a class="reference internal" href="#optional-numeric-output-adapter">Optional numeric output adapter</a></li>
+<li><a class="reference internal" href="#raw-file-format-support">Raw file format support</a><ul>
 <li><a class="reference internal" href="#supported-raw-file-structure">Supported raw-file structure</a></li>
 <li><a class="reference internal" href="#generic-spice3-style-dialect">Generic SPICE3-style dialect</a><ul>
 <li><a class="reference internal" href="#ascii-values-data">ASCII <code class="docutils literal notranslate"><span class="pre">Values:</span></code> data</a></li>

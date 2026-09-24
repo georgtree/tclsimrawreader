@@ -219,6 +219,8 @@ $(PKG_STUB_LIB_FILE): $(PKG_STUB_OBJECTS)
 	${MAKE_STUB_LIB}
 	$(RANLIB_STUB) $(PKG_STUB_LIB_FILE)
 
+$(PKG_OBJECTS): $(srcdir)/generic/tclsimrawreader.h
+
 VPATH = $(srcdir):$(srcdir)/generic:$(srcdir)/unix:$(srcdir)/win:$(srcdir)/macosx
 
 .c.@OBJEXT@:

@@ -6,15 +6,18 @@ namespace eval ::tclsimrawreader {
         # Every `::tclsimrawreader::openraw` returns a command (e.g. `::tclsimrawreader::s1`). The following 
         # subcommands operate on that file instance.
         #  -dialect name - optional dialect, possible values are `generic` and `ltspice`, default is `generic`
+        #  -output mode - default output, `list` or `vector`; default is `list`
+        #  -ifexists policy - default collision policy, `error` or `replace`; default is `error`
         #  filepath - path to SPICE .raw file
         # Returns: command name to work with the file, references as `RAWFILE` later
         #
         # Example:
         #```tcl
         # set rawfile [tclsimrawreader::openraw /path/to/ac.raw]
+        # set rawfile [tclsimrawreader::openraw /path/to/ac.raw -output vector -ifexists replace]
         # set rawfile [tclsimrawreader::openraw -dialect ltspice /path/to/ac.raw]
         #```
-        # Synopsis: ?-dialect name? filepath
+        # Synopsis: ?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath
     }
 }
 
@@ -89,7 +92,13 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -from index - number of the values from the start of the vector, optional, integer
         #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
         #   integer
-        # Returns: list of values
+        #  -output mode - override the handle output for this call: `list` or `vector`
+        #  -ifexists policy - override collision handling for this call: `error` or `replace`
+        # In vector mode, names are reversibly encoded for RBC (for example `v(out)` becomes `v_28out_29`) and
+        # qualified in the calling namespace. New vectors have no mapped Tcl arrays and outlive the raw handle.
+        # Complex raw data creates complex RBC vectors. Replacement preserves same-type vector identity; an
+        # unrelated command or a numeric type mismatch is an error. See the start page for naming and ownership.
+        # Returns: list of values in list mode, or fully qualified RBC vector command name in vector mode
         #
         # Example:
         #```tcl
@@ -99,7 +108,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vector ID(M1) -count 16
         # $rawfile vector ID(M1)
         #```
-        # Synopsis: name ?-plot index? ?-from index? ?-count index?
+        # Synopsis: ?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?
     }
 
     proc vectors {args} {
@@ -110,7 +119,11 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -from index - number of the values from the start of the vector, optional, integer
         #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
         #   integer
-        # Returns: list of values
+        #  -output mode - override the handle output for this call: `list` or `vector`
+        #  -ifexists policy - override collision handling for this call: `error` or `replace`
+        # Options do not change the handle defaults. Vector naming, types, collision handling and ownership follow
+        # the single-vector command. All selected data is decoded before any destination data is replaced.
+        # Returns: dictionary of original raw names to value lists, or to fully qualified RBC command names
         #
         # Example:
         #```tcl
@@ -121,7 +134,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vectors {ID(M1) V(VD)}
         # $rawfile vectors -plot 2 -all 
         #```
-        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index?
+        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?
     }
 
     proc close {} {

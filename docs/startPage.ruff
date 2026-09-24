@@ -73,4 +73,78 @@ variable startPage {
     ```tcl
     $rawfile close
     ```
+
+    ## Optional RBC vector output
+
+    The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency. To enable
+    real and complex [rbc-tk9](https://github.com/georgtree/rbc-tk9) output, use Tcl 9 and matching RBC 0.5.0 headers:
+
+    ```sh
+    ./configure --with-tcl=/path/to/tcl/lib --with-rbc=/path/to/rbc-tk9
+    make clean
+    make
+    ```
+
+    `--with-rbc` accepts a source tree, installation prefix, or directory containing `rbcVector.h`, `rbcDecls.h` and
+    `rbcStubLib.c`, just as in tclmeasure. The portable stub client is compiled into this package; the RBC shared
+    library is not linked. `--without-rbc` selects the default list-only build. Even an enabled build can load and
+    read lists without RBC installed. `rbc::vector` is required only when vector output is selected. No Tk
+    initialization is needed, although the installed RBC binary must have its system library dependencies available.
+
+    Use an RBC build with the namespace-safe vector command deletion fix (deletion by Tcl command token), so vectors
+    can safely be destroyed from outside their namespace. This does not change the RBC stubs ABI.
+
+    Set handle defaults with `-output list|vector` and `-ifexists error|replace`. Defaults are `list` and `error`.
+    Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
+
+    ```tcl
+    set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error]
+    set signal [$raw vector v(out)]
+    # -> ::v_28out_29, if called from the global namespace
+    set values [$signal index :]
+    set commands [$raw vectors {time v(out)} -ifexists replace]
+    # -> time ::time v(out) ::v_28out_29
+    set values [$raw vector v(out) -output list]
+    $raw close
+    # Created vectors remain alive and are owned by the caller.
+    ```
+
+    For `openraw`, options may precede or follow the file name. For read commands, `-output` and `-ifexists` may precede
+    or follow the selection; `-plot` precedes it as before. Existing `-from`, `-count`, selected-name lists, `-all`,
+    dialects and multi-plot handling work in both output modes. In vector mode, `vector` returns one fully qualified
+    command name; `vectors` returns a dictionary whose original raw-name keys map to fully qualified command names.
+    An empty selection returns an empty dictionary. A zero-length range creates an empty vector.
+
+    ### Destination names and ownership
+
+    RBC vector names cannot contain parentheses. Destination names are derived deterministically from the raw name:
+    ASCII letters, digits and periods remain unchanged; every other UTF-8 byte becomes `_HH` (uppercase hexadecimal).
+    Underscores are escaped too, so distinct raw names cannot collide through encoding. Examples:
+
+    | Raw name | Destination tail |
+    | --- | --- |
+    | `time` | `time` |
+    | `v(out)` | `v_28out_29` |
+    | `v_28out_29` | `v_5F28out_5F29` |
+    | `L2:flux` | `L2_3Aflux` |
+
+    The destination is in the namespace active when the read command is invoked. Raw colons are encoded, not treated
+    as namespace separators. Use `namespace eval ::signals [list $raw vectors -all -output vector]` to choose a
+    namespace explicitly (create it first). Newly created vectors have no mapped Tcl array variable, so they neither
+    replace ordinary Tcl variables nor interpret raw parentheses as array syntax. New vector indexes start at zero,
+    including partial reads. Closing a handle does not destroy its output vectors; use `rbc::vector destroy` when done.
+
+    ### Collisions and numeric types
+
+    `-ifexists error` rejects an existing vector or command. `-ifexists replace` replaces the data of an existing RBC
+    vector of the same numeric type, retaining the vector identity, clients, index offset and any existing array
+    mapping. It never overwrites an unrelated Tcl command. RBC vector types are immutable: a real/complex mismatch
+    is an error even with `replace`; explicitly destroy the old vector first if changing type is intended.
+
+    Each variable's resolved raw storage determines its RBC type. Complex samples become complex RBC vectors without
+    losing their imaginary components. Real samples (including real axes in mixed layouts) remain real vectors.
+    Numeric data is decoded into buffers directly, without a full intermediate Tcl list. All selected data is read
+    and all known name/type collisions are checked before publication, so read and preflight errors leave existing
+    values unchanged. RBC notifications and command traces may execute application callbacks during publication;
+    updates are not a transaction against reentrant application code.
 }

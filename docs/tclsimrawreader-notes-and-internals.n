@@ -5,6 +5,23 @@
 .SH NAME
 Notes and internals - Commands in namespace Notes and internals
 .SH "NOTES AND INTERNALS"
+.SH "OPTIONAL NUMERIC OUTPUT ADAPTER"
+.PP
+tclsimrawreaderRbc\&.c contains the conditional RBC headers, stub initialization, reversible name encoding,
+collision checks and publication\&. RawOutputOptions records handle defaults; read commands copy it before
+parsing overrides\&. RawNumericColumn buffers hold decoded doubles, interleaved for complex samples\&.
+.PP
+The list readers retain their result representation\&. The vector reader reuses binary layout metadata and
+ASCII token decoding, but writes numeric buffers instead of per-sample Tcl objects\&. Real buffers transfer
+to RBC with TCL_DYNAMIC; complex buffers are packed into the public Rbc_Complex representation\&. Creation
+uses RBC's Tcl command with -variable {} because the current public creation stubs default real vectors to
+automatic array mapping\&. No Tcl script is assembled from raw names; creation uses Tcl_EvalObjv\&.
+.PP
+All selected data is decoded before publication\&. Known collisions and type mismatches are preflighted\&.
+Newly created commands are removed if publication fails; existing vectors are never deleted\&. Client
+notifications can execute reentrant application code, so callback-induced failures are not fully atomic\&.
+Active raw handles are preserved during calls and freed through Tcl_EventuallyFree to tolerate callbacks
+that close the handle\&. Per-interpreter package initialization always precedes the data read\&.
 .SH "RAW FILE FORMAT SUPPORT"
 .PP
 This reader supports two raw-file dialects:

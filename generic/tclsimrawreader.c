@@ -1,5 +1,40 @@
 #include "tclsimrawreader.h"
 
+static const char *types[] = {"time",
+                              "frequency",
+                              "voltage",
+                              "current",
+                              "power",
+                              "resistance",
+                              "impedance",
+                              "admittance",
+                              "conductance",
+                              "capacitance",
+                              "charge",
+                              "flux",
+                              "temperature",
+                              "noise",
+                              "expression",
+                              "voltage-density",
+                              "current-density",
+                              "voltage^2-density",
+                              "current^2-density",
+                              "pole",
+                              "zero",
+                              "s-param",
+                              "param",
+                              "temp-sweep",
+                              "res-sweep",
+                              "phase",
+                              "decibel",
+                              "device_current",
+                              "unknown",
+                              "notype",
+                              "s-parameter",
+                              "h-parameter",
+                              "subckt_current",
+                              NULL};
+
 //** forward declarations
 static void RawHeaderInit(RawHeader *h);
 static void RawHeaderFree(RawHeader *h);
@@ -48,10 +83,11 @@ static double ReadLEFloat64(const unsigned char *p);
 static int RawBinaryReadExactBytes(Tcl_Interp *interp, Tcl_Channel chan, unsigned char *buf, Tcl_Size nbytes);
 static int RawAppendBinaryValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const unsigned char *p);
 static int RawParseAsciiDoubleToken(Tcl_Interp *interp, const char *start, Tcl_Size len, double *valuePtr);
-static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const char *start,
-                               Tcl_Size len);
+static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawNumericColumn *column, RawValueStorage storage,
+                               const char *start, Tcl_Size len);
 static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
-                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs);
+                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs,
+                                RawNumericColumn *columns);
 static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawPlot *plot);
 static int RawPlotFindVariable(Tcl_Interp *interp, RawPlot *plot, const char *name, Tcl_Size *indexPtr);
 static int RawPlotResolveVariableList(Tcl_Interp *interp, RawPlot *plot, Tcl_Obj *namesObj, Tcl_Size *numVarsPtr,
@@ -106,13 +142,13 @@ static int RawLtspiceAppendAsciiSegmentPlots(Tcl_Interp *interp, RawFile *rf, Ra
                                              Tcl_Size *counts, Tcl_Size numSteps);
 static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size declaredPoints);
 static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr);
+                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output);
 static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
 static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
-                         Tcl_Size *fromPtr, Tcl_Size *countPtr);
+                         Tcl_Size *fromPtr, Tcl_Size *countPtr, RawOutputOptions *output);
 static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
                                  Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr);
-static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
+static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
 static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
 
 //** Header/object lifetime helpers
@@ -473,6 +509,8 @@ static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot)
  *
  * RawFileDeleteProc --
  *
+ *      Command deletion now schedules RawFileFree with Tcl_EventuallyFree; active calls preserve the handle.
+ *
  *      Releases all resources owned by a RawFile handle.
  *
  * Parameters:
@@ -493,7 +531,7 @@ static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot)
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static void RawFileDeleteProc(void *clientData) {
+static void RawFileFree(void *clientData) {
     RawFile *rf = (RawFile *)clientData;
     if (rf->chan) {
         Tcl_Close(NULL, rf->chan);
@@ -510,6 +548,13 @@ static void RawFileDeleteProc(void *clientData) {
         Tcl_Free((char *)rf->plots);
     }
     Tcl_Free((char *)rf);
+}
+
+/* Defer handle storage release while a vector-output call can invoke Tcl callbacks. */
+static void RawFileDeleteProc(void *clientData) {
+    RawFile *rf = (RawFile *)clientData;
+    rf->token = NULL;
+    Tcl_EventuallyFree(rf, RawFileFree);
 }
 
 //** Generic string/token/numeric helpers
@@ -2311,6 +2356,8 @@ static int RawParseAsciiDoubleToken(Tcl_Interp *interp, const char *start, Tcl_S
  *
  * RawAppendAsciiValue --
  *
+ *      An optional numeric column receives decoded samples directly; otherwise the original Tcl list is appended.
+ *
  *      Parses one ASCII raw-data value token and appends it to a Tcl list.
  *
  * Parameters:
@@ -2337,8 +2384,12 @@ static int RawParseAsciiDoubleToken(Tcl_Interp *interp, const char *start, Tcl_S
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueStorage storage, const char *start,
-                               Tcl_Size len) {
+static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawNumericColumn *column, RawValueStorage storage,
+                               const char *start, Tcl_Size len) {
+    if (column != NULL && column->used >= column->count) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw numeric output overflow", -1));
+        return TCL_ERROR;
+    }
     if (len >= 2 && start[0] == '(' && start[len - 1] == ')') {
         start++;
         len -= 2;
@@ -2350,7 +2401,11 @@ static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSto
         if (RawParseAsciiDoubleToken(interp, start, len, &value) != TCL_OK) {
             return TCL_ERROR;
         }
-        Tcl_ListObjAppendElement(interp, listObj, Tcl_NewDoubleObj(value));
+        if (column != NULL) {
+            column->values[column->used++] = value;
+        } else {
+            Tcl_ListObjAppendElement(interp, listObj, Tcl_NewDoubleObj(value));
+        }
         return TCL_OK;
     }
     case RAW_VALUE_COMPLEX128: {
@@ -2373,6 +2428,12 @@ static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSto
         if (RawParseAsciiDoubleToken(interp, comma + 1, imagLen, &imagValue) != TCL_OK) {
             return TCL_ERROR;
         }
+        if (column != NULL) {
+            column->values[2 * column->used] = realValue;
+            column->values[2 * column->used + 1] = imagValue;
+            column->used++;
+            return TCL_OK;
+        }
         pairObj = Tcl_NewListObj(0, NULL);
         Tcl_ListObjAppendElement(interp, pairObj, Tcl_NewDoubleObj(realValue));
         Tcl_ListObjAppendElement(interp, pairObj, Tcl_NewDoubleObj(imagValue));
@@ -2390,6 +2451,8 @@ static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSto
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawAsciiReadOnePoint --
+ *
+ *      The optional sparse columns array selects numeric buffer outputs; NULL retains the existing list/scan paths.
  *
  *      Reads and parses one complete point from an ASCII Values: block.
  *
@@ -2421,7 +2484,8 @@ static int RawAppendAsciiValue(Tcl_Interp *interp, Tcl_Obj *listObj, RawValueSto
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind kind, Tcl_Encoding enc, RawHeader *h,
-                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs) {
+                                Tcl_Size selectedVarIndex, Tcl_Obj *selectedListObj, Tcl_Obj **vecObjs,
+                                RawNumericColumn *columns) {
     Tcl_Size valuesSeen = 0;
     int sawPointIndex = 0;
     while (valuesSeen < h->numVariables) {
@@ -2480,20 +2544,27 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
                     combined = Tcl_DStringValue(&ds);
                     combinedLen = (Tcl_Size)Tcl_DStringLength(&ds);
                     if (selectedListObj && valuesSeen == selectedVarIndex) {
-                        if (RawAppendAsciiValue(interp, selectedListObj, var->storage, combined, combinedLen) !=
-                            TCL_OK) {
-                            Tcl_DStringFree(&ds);
-                            Tcl_DStringFree(&lineDs);
-                            return TCL_ERROR;
-                         }
-                    }
-                    if (vecObjs && vecObjs[valuesSeen]) {
-                        if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], var->storage, combined, combinedLen) !=
+                        if (RawAppendAsciiValue(interp, selectedListObj, NULL, var->storage, combined, combinedLen) !=
                             TCL_OK) {
                             Tcl_DStringFree(&ds);
                             Tcl_DStringFree(&lineDs);
                             return TCL_ERROR;
                         }
+                    }
+                    if (vecObjs && vecObjs[valuesSeen]) {
+                        if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], NULL, var->storage, combined,
+                                                combinedLen) != TCL_OK) {
+                            Tcl_DStringFree(&ds);
+                            Tcl_DStringFree(&lineDs);
+                            return TCL_ERROR;
+                        }
+                    }
+                    if (columns != NULL && columns[valuesSeen].values != NULL &&
+                        RawAppendAsciiValue(interp, NULL, &columns[valuesSeen], var->storage, combined, combinedLen) !=
+                            TCL_OK) {
+                        Tcl_DStringFree(&ds);
+                        Tcl_DStringFree(&lineDs);
+                        return TCL_ERROR;
                     }
                     Tcl_DStringFree(&ds);
                     valuesSeen++;
@@ -2501,16 +2572,21 @@ static int RawAsciiReadOnePoint(Tcl_Interp *interp, Tcl_Channel chan, EncKind ki
                 }
             }
             if (selectedListObj && valuesSeen == selectedVarIndex) {
-                if (RawAppendAsciiValue(interp, selectedListObj, var->storage, tokStart, tokLen) != TCL_OK) {
+                if (RawAppendAsciiValue(interp, selectedListObj, NULL, var->storage, tokStart, tokLen) != TCL_OK) {
                     Tcl_DStringFree(&lineDs);
                     return TCL_ERROR;
                 }
             }
             if (vecObjs && vecObjs[valuesSeen]) {
-                if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], var->storage, tokStart, tokLen) != TCL_OK) {
+                if (RawAppendAsciiValue(interp, vecObjs[valuesSeen], NULL, var->storage, tokStart, tokLen) != TCL_OK) {
                     Tcl_DStringFree(&lineDs);
                     return TCL_ERROR;
                 }
+            }
+            if (columns != NULL && columns[valuesSeen].values != NULL &&
+                RawAppendAsciiValue(interp, NULL, &columns[valuesSeen], var->storage, tokStart, tokLen) != TCL_OK) {
+                Tcl_DStringFree(&lineDs);
+                return TCL_ERROR;
             }
             valuesSeen++;
         }
@@ -2589,7 +2665,7 @@ static int RawPlotScanAsciiValues(Tcl_Interp *interp, Tcl_Channel chan, EncKind 
             return TCL_ERROR;
         }
         plot->pointOffsets[point] = pointOffset;
-        if (RawAsciiReadOnePoint(interp, chan, kind, enc, h, -1, NULL, NULL) != TCL_OK) {
+        if (RawAsciiReadOnePoint(interp, chan, kind, enc, h, -1, NULL, NULL, NULL) != TCL_OK) {
             return TCL_ERROR;
         }
     }
@@ -3055,7 +3131,7 @@ static int RawPlotAsciiReadVectorsToObj(Tcl_Interp *interp, RawFile *rf, RawPlot
             return TCL_ERROR;
         }
         for (Tcl_Size point = 0; point < count; point++) {
-            if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, -1, NULL, allVecObjs) != TCL_OK) {
+            if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, -1, NULL, allVecObjs, NULL) != TCL_OK) {
                 Tcl_Free((char *)allVecObjs);
                 RawFreeVectorObjects(selectedVecObjs, numVars);
                 return TCL_ERROR;
@@ -4074,7 +4150,7 @@ static int RawAsciiReadAxisAtCurrentPoint(Tcl_Interp *interp, Tcl_Channel chan, 
     int r;
     listObj = Tcl_NewListObj(0, NULL);
     Tcl_IncrRefCount(listObj);
-    r = RawAsciiReadOnePoint(interp, chan, kind, enc, h, 0, listObj, NULL);
+    r = RawAsciiReadOnePoint(interp, chan, kind, enc, h, 0, listObj, NULL, NULL);
     if (r != TCL_OK) {
         Tcl_DecrRefCount(listObj);
         return TCL_ERROR;
@@ -4537,11 +4613,48 @@ static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawP
 }
 
 //** Tcl command argument parsing
+//***  RawParseOutputOption function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawParseOutputOption --
+ *
+ *      Parses one -output or -ifexists value into caller-owned options. Returns TCL_OK on success or TCL_ERROR
+ *      with a diagnostic. No package is loaded and no vectors are changed during option parsing.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj *valueObj, RawOutputOptions *output) {
+    const char *value = Tcl_GetString(valueObj);
+    if (strcmp(option, "-output") == 0) {
+        if (strcmp(value, "list") == 0) {
+            output->vectors = 0;
+        } else if (strcmp(value, "vector") == 0) {
+            output->vectors = 1;
+        } else {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("bad -output value \"%s\": must be list or vector", value));
+            return TCL_ERROR;
+        }
+    } else {
+        if (strcmp(value, "error") == 0) {
+            output->replace = 0;
+        } else if (strcmp(value, "replace") == 0) {
+            output->replace = 1;
+        } else {
+            Tcl_SetObjResult(interp, Tcl_ObjPrintf("bad -ifexists value \"%s\": must be error or replace", value));
+            return TCL_ERROR;
+        }
+    }
+    return TCL_OK;
+}
+
 //***  RawParseOpenArgs function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawParseOpenArgs --
+ *
+ *      Also parses handle defaults -output list|vector and -ifexists error|replace, before or after the file name.
  *
  *      Parses arguments for the openraw command.
  *
@@ -4567,24 +4680,43 @@ static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawP
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr) {
+                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output) {
     RawDialect dialect = RAW_DIALECT_GENERIC;
     Tcl_Obj *fileNameObj = NULL;
-    if (objc == 2) {
-        fileNameObj = objv[1];
-    } else if (objc == 4 && strcmp(Tcl_GetString(objv[1]), "-dialect") == 0) {
-        const char *dialectName = Tcl_GetString(objv[2]);
-        if (strcmp(dialectName, "generic") == 0) {
-            dialect = RAW_DIALECT_GENERIC;
-        } else if (strcmp(dialectName, "ltspice") == 0) {
-            dialect = RAW_DIALECT_LTSPICE;
+    for (Tcl_Size i = 1; i < objc; i++) {
+        const char *option = Tcl_GetString(objv[i]);
+        if (strcmp(option, "--") == 0 && i + 2 == objc && fileNameObj == NULL) {
+            fileNameObj = objv[++i];
+        } else if (strcmp(option, "-dialect") == 0 || strcmp(option, "-output") == 0 ||
+                   strcmp(option, "-ifexists") == 0) {
+            if (++i >= objc) {
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
+                return TCL_ERROR;
+            }
+            if (strcmp(option, "-dialect") == 0) {
+                const char *value = Tcl_GetString(objv[i]);
+                if (strcmp(value, "generic") == 0) {
+                    dialect = RAW_DIALECT_GENERIC;
+                } else if (strcmp(value, "ltspice") == 0) {
+                    dialect = RAW_DIALECT_LTSPICE;
+                } else {
+                    Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", value));
+                    return TCL_ERROR;
+                }
+            } else if (RawParseOutputOption(interp, option, objv[i], output) != TCL_OK) {
+                return TCL_ERROR;
+            }
+        } else if (fileNameObj == NULL) {
+            fileNameObj = objv[i];
         } else {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", dialectName));
+            Tcl_WrongNumArgs(interp, 1, objv,
+                             "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? fileName");
             return TCL_ERROR;
         }
-        fileNameObj = objv[3];
-    } else {
-        Tcl_WrongNumArgs(interp, 1, objv, "?-dialect generic|ltspice? fileName");
+    }
+    if (fileNameObj == NULL) {
+        Tcl_WrongNumArgs(interp, 1, objv,
+                         "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? fileName");
         return TCL_ERROR;
     }
     *dialectPtr = dialect;
@@ -4637,6 +4769,8 @@ static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_
  *
  * RawParseRange --
  *
+ *      Also accepts trailing -output and -ifexists overrides in the caller-owned copy of the handle defaults.
+ *
  *      Parses and validates optional -from and -count point-range arguments.
  *
  * Parameters:
@@ -4650,7 +4784,8 @@ static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_
  *
  * Results:
  *      Returns TCL_OK if the range is parsed and valid.
- *      Returns TCL_ERROR on missing option value, invalid integer, negative value, unknown option, or out-of-range span.
+ *      Returns TCL_ERROR on missing option value, invalid integer, negative value, unknown option, or out-of-range
+ * span.
  *
  * Side Effects:
  *      Writes the parsed range to *fromPtr and *countPtr on success.
@@ -4665,7 +4800,7 @@ static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
-                         Tcl_Size *fromPtr, Tcl_Size *countPtr) {
+                         Tcl_Size *fromPtr, Tcl_Size *countPtr, RawOutputOptions *output) {
     RawHeader *h = &plot->header;
     Tcl_Size from = 0;
     Tcl_Size count = 0;
@@ -4679,6 +4814,12 @@ static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_O
             return TCL_ERROR;
         }
         opt = Tcl_GetString(objv[i]);
+        if (strcmp(opt, "-output") == 0 || strcmp(opt, "-ifexists") == 0) {
+            if (RawParseOutputOption(interp, opt, objv[i + 1], output) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            continue;
+        }
         if (Tcl_GetWideIntFromObj(interp, objv[i + 1], &wide) != TCL_OK) {
             return TCL_ERROR;
         }
@@ -4768,11 +4909,194 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
 }
 
 //** Tcl command implementations
+//***  RawPlotReadRbcVectors function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawPlotReadRbcVectors --
+ *
+ *      Decodes selected columns into owned numeric buffers and publishes real/complex RBC vectors only after the
+ *      complete read succeeds. Binary reads remain chunked; ASCII reads reuse the existing point/token parser.
+ *      No per-sample Tcl objects are created. Destination names and collisions are checked before reading and
+ *      rechecked at publication. Returns a vector command name, or a raw-name to vector-name dictionary.
+ *
+ * Parameters:
+ *      rf/plot                 - Open handle and selected plot; caller preserves rf across this operation.
+ *      numVars/varIndexes      - Validated selection of physical variable indexes.
+ *      firstPoint/count        - Validated point range.
+ *      replace/dictionary      - Collision policy and result shape.
+ *      objPtr                  - Receives a new Tcl result on success.
+ *
+ * Results:
+ *      TCL_OK on success; TCL_ERROR on unsupported build, package, naming, allocation, decoding or publication
+ *      failure. All temporary buffers and names are released. A read error leaves existing destinations untouched.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars, Tcl_Size *varIndexes,
+                                 Tcl_Size firstPoint, Tcl_Size count, int replace, int dictionary, Tcl_Obj **objPtr) {
+    RawHeader *h = &plot->header;
+    RawNumericColumn *columns = NULL, *allColumns = NULL;
+    Tcl_Obj **names = NULL;
+    unsigned char *buffer = NULL;
+    Tcl_Obj *result = NULL;
+    int status = TCL_ERROR;
+    if (RawRbcInit(interp) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (rf->token == NULL) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw handle was closed while loading RBC", -1));
+        return TCL_ERROR;
+    }
+    if (numVars == 0) {
+        *objPtr = Tcl_NewDictObj();
+        return TCL_OK;
+    }
+    if ((size_t)numVars > SIZE_MAX / sizeof(*columns) || (size_t)numVars > SIZE_MAX / sizeof(*names)) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw numeric column array overflow", -1));
+        return TCL_ERROR;
+    }
+    columns = (RawNumericColumn *)Tcl_Alloc((size_t)numVars * sizeof(*columns));
+    names = (Tcl_Obj **)Tcl_Alloc((size_t)numVars * sizeof(*names));
+    memset(columns, 0, (size_t)numVars * sizeof(*columns));
+    memset(names, 0, (size_t)numVars * sizeof(*names));
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        RawVariable *variable = &h->variables[varIndexes[i]];
+        Tcl_Size components = variable->storage == RAW_VALUE_COMPLEX128 ? 2 : 1;
+        names[i] = RawRbcName(interp, variable->name);
+        Tcl_IncrRefCount(names[i]);
+        for (Tcl_Size j = 0; j < i; j++) {
+            if (strcmp(Tcl_GetString(names[i]), Tcl_GetString(names[j])) == 0) {
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("duplicate vector destination \"%s\"", Tcl_GetString(names[i])));
+                goto done;
+            }
+        }
+        columns[i].complex = components == 2;
+        columns[i].count = count;
+        if (RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+            goto done;
+        }
+        if (count > TCL_SIZE_MAX / components || (size_t)count > SIZE_MAX / sizeof(double) / (size_t)components) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw numeric column size overflow", -1));
+            goto done;
+        }
+        /* Retain a non-NULL buffer for selected empty columns, too. */
+        size_t bytes = (size_t)count * (size_t)components * sizeof(double);
+        columns[i].values = (double *)Tcl_AttemptAlloc(bytes ? bytes : sizeof(double));
+        if (columns[i].values == NULL) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("cannot allocate raw numeric column", -1));
+            goto done;
+        }
+    }
+    if (count > 0 && plot->dataKind == DATA_BINARY) {
+        Tcl_Size stride = h->pointStrideBytes;
+        if (stride <= 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid raw point stride", -1));
+            goto done;
+        }
+        Tcl_Size chunk = 1024 * 1024 / stride;
+        if (chunk < 1) {
+            chunk = 1;
+        }
+        if (chunk > count) {
+            chunk = count;
+        }
+        if (chunk > TCL_SIZE_MAX / stride) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw chunk size overflow", -1));
+            goto done;
+        }
+        buffer = (unsigned char *)Tcl_Alloc((size_t)(chunk * stride));
+        Tcl_WideInt offset = plot->dataOffset + (Tcl_WideInt)firstPoint * stride;
+        if (Tcl_Seek(rf->chan, offset, SEEK_SET) < 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek inside raw binary data", -1));
+            goto done;
+        }
+        for (Tcl_Size donePoints = 0; donePoints < count;) {
+            Tcl_Size n = count - donePoints;
+            if (n > chunk) {
+                n = chunk;
+            }
+            if (RawBinaryReadExactBytes(interp, rf->chan, buffer, n * stride) != TCL_OK) {
+                goto done;
+            }
+            for (Tcl_Size point = 0; point < n; point++) {
+                for (Tcl_Size i = 0; i < numVars; i++) {
+                    RawVariable *variable = &h->variables[varIndexes[i]];
+                    const unsigned char *sample = buffer + point * stride + variable->offsetBytes;
+                    Tcl_Size index = donePoints + point;
+                    if (columns[i].complex) {
+                        columns[i].values[2 * index] = ReadLEFloat64(sample);
+                        columns[i].values[2 * index + 1] = ReadLEFloat64(sample + 8);
+                    } else {
+                        columns[i].values[index] = variable->storage == RAW_VALUE_REAL32 ? ReadLEFloat32AsDouble(sample)
+                                                                                         : ReadLEFloat64(sample);
+                    }
+                }
+            }
+            donePoints += n;
+        }
+    } else if (count > 0) {
+        if ((size_t)h->numVariables > SIZE_MAX / sizeof(*allColumns)) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("raw numeric column array overflow", -1));
+            goto done;
+        }
+        allColumns = (RawNumericColumn *)Tcl_Alloc((size_t)h->numVariables * sizeof(*allColumns));
+        memset(allColumns, 0, (size_t)h->numVariables * sizeof(*allColumns));
+        for (Tcl_Size i = 0; i < numVars; i++) {
+            allColumns[varIndexes[i]] = columns[i];
+        }
+        if (Tcl_Seek(rf->chan, plot->pointOffsets[firstPoint], SEEK_SET) < 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("failed to seek to ASCII raw point", -1));
+            goto done;
+        }
+        for (Tcl_Size point = 0; point < count; point++) {
+            if (RawAsciiReadOnePoint(interp, rf->chan, rf->encKind, rf->enc, h, -1, NULL, NULL, allColumns) != TCL_OK) {
+                goto done;
+            }
+        }
+    }
+    if (RawRbcPublish(interp, numVars, names, columns, replace, dictionary, &result) != TCL_OK) {
+        goto done;
+    }
+    if (dictionary) {
+        /* Publication returns names in selection order; preserve the original raw strings as dictionary keys. */
+        Tcl_Obj *dict = Tcl_NewDictObj();
+        Tcl_IncrRefCount(result);
+        for (Tcl_Size i = 0; i < numVars; i++) {
+            Tcl_DictObjPut(interp, dict, Tcl_NewStringObj(h->variables[varIndexes[i]].name, -1), names[i]);
+        }
+        Tcl_DecrRefCount(result);
+        result = dict;
+    }
+    *objPtr = result;
+    status = TCL_OK;
+done:
+    if (buffer) {
+        Tcl_Free((char *)buffer);
+    }
+    if (allColumns) {
+        Tcl_Free((char *)allColumns);
+    }
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        if (columns[i].values) {
+            Tcl_Free((char *)columns[i].values);
+        }
+        if (names[i]) {
+            Tcl_DecrRefCount(names[i]);
+        }
+    }
+    Tcl_Free((char *)columns);
+    Tcl_Free((char *)names);
+    return status;
+}
+
 //***  RawFileObjCmd function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawFileObjCmd --
+ *
+ *      Output defaults may be overridden per read. Vector output returns command names instead of numeric lists.
  *
  *      Implements the Tcl command associated with an opened raw-file handle.
  *
@@ -4790,9 +5114,9 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *          $handle vector ?-plot index? name ?-from index? ?-count count?
  *          $handle vectors ?-plot index? (-all|nameList) ?-from index? ?-count count?
  *
- *      The vector subcommand returns one selected vector as a Tcl list.
- *      The vectors subcommand returns a dictionary mapping selected vector names to value lists. With -all, vectors
- *      returns all vectors from the selected plot.
+ *      The vector subcommand returns one selected list, or an RBC vector command name in vector output mode.
+ *      The vectors subcommand maps raw names to value lists, or to RBC vector command names in vector mode. With -all,
+ * vectors returns all vectors from the selected plot.
  *
  * Parameters:
  *      void *clientData      - RawFile pointer supplied when the handle command was created.
@@ -4826,7 +5150,7 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
     RawFile *rf = (RawFile *)clientData;
     const char *subcmd;
     if (objc < 2) {
@@ -4904,6 +5228,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
     }
     if (strcmp(subcmd, "vectors") == 0) {
         RawPlot *plot;
+        RawOutputOptions output = rf->output;
         Tcl_Size next;
         Tcl_Size firstPoint;
         Tcl_Size count;
@@ -4911,8 +5236,27 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
         Tcl_Size *varIndexes = NULL;
         Tcl_Obj *dictObj;
         int r;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
+        next = 2;
+        plot = &rf->plots[0];
+        while (next < objc) {
+            const char *option = Tcl_GetString(objv[next]);
+            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0) {
+                break;
+            }
+            if (next + 1 >= objc) {
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
+                return TCL_ERROR;
+            }
+            if (strcmp(option, "-plot") == 0) {
+                Tcl_Size index;
+                if (RawParsePlotIndex(interp, rf, objv[next + 1], &index) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+                plot = &rf->plots[index];
+            } else if (RawParseOutputOption(interp, option, objv[next + 1], &output) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            next += 2;
         }
         if (next >= objc) {
             Tcl_WrongNumArgs(interp, 2, objv, "?-plot index? -all|namesList ?-from index? ?-count count?");
@@ -4929,14 +5273,19 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
             }
             next++;
         }
-        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count) != TCL_OK) {
+        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count, &output) != TCL_OK) {
             if (varIndexes) {
                 Tcl_Free((char *)varIndexes);
             }
             return TCL_ERROR;
         }
-        r = RawPlotReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count, RAW_VECTOR_RESULT_DICT,
-                                    &dictObj);
+        if (output.vectors) {
+            r = RawPlotReadRbcVectors(interp, rf, plot, numVars, varIndexes, firstPoint, count, output.replace, 1,
+                                      &dictObj);
+        } else {
+            r = RawPlotReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count,
+                                        RAW_VECTOR_RESULT_DICT, &dictObj);
+        }
         if (varIndexes) {
             Tcl_Free((char *)varIndexes);
         }
@@ -4948,14 +5297,34 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
     }
     if (strcmp(subcmd, "vector") == 0) {
         RawPlot *plot;
+        RawOutputOptions output = rf->output;
         Tcl_Size next;
         Tcl_Size firstPoint;
         Tcl_Size count;
         Tcl_Size varIndex;
         Tcl_Obj *vecObj;
         const char *name;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
+        next = 2;
+        plot = &rf->plots[0];
+        while (next < objc) {
+            const char *option = Tcl_GetString(objv[next]);
+            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0) {
+                break;
+            }
+            if (next + 1 >= objc) {
+                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
+                return TCL_ERROR;
+            }
+            if (strcmp(option, "-plot") == 0) {
+                Tcl_Size index;
+                if (RawParsePlotIndex(interp, rf, objv[next + 1], &index) != TCL_OK) {
+                    return TCL_ERROR;
+                }
+                plot = &rf->plots[index];
+            } else if (RawParseOutputOption(interp, option, objv[next + 1], &output) != TCL_OK) {
+                return TCL_ERROR;
+            }
+            next += 2;
         }
         if (next >= objc) {
             Tcl_WrongNumArgs(interp, 2, objv, "?-plot index? name ?-from index? ?-count count?");
@@ -4966,10 +5335,13 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
             return TCL_ERROR;
         }
         next++;
-        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count) != TCL_OK) {
+        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count, &output) != TCL_OK) {
             return TCL_ERROR;
         }
-        if (RawPlotVectorToObj(interp, rf, plot, varIndex, firstPoint, count, &vecObj) != TCL_OK) {
+        int result = output.vectors ? RawPlotReadRbcVectors(interp, rf, plot, 1, &varIndex, firstPoint, count,
+                                                            output.replace, 0, &vecObj)
+                                    : RawPlotVectorToObj(interp, rf, plot, varIndex, firstPoint, count, &vecObj);
+        if (result != TCL_OK) {
             return TCL_ERROR;
         }
         Tcl_SetObjResult(interp, vecObj);
@@ -4979,11 +5351,22 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
     return TCL_ERROR;
 }
 
+/* Keep the handle alive across optional package loading and RBC client callbacks. */
+static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    int result;
+    Tcl_Preserve(clientData);
+    result = RawFileObjCmdImpl(clientData, interp, objc, objv);
+    Tcl_Release(clientData);
+    return result;
+}
+
 //***  RawOpenCmd function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawOpenCmd --
+ *
+ *      Stores output/collision defaults. Vector output initializes RBC before opening the file; list output does not.
  *
  *      Opens a SPICE raw file, scans its plots, and creates a Tcl handle command for lazy data access.
  *
@@ -4991,7 +5374,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *      void *clientData      - Unused.
  *      Tcl_Interp *interp    - Interpreter used for command creation, results, and error reporting.
  *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - Command arguments; expects fileName.
+ *      Tcl_Obj *const objv[] - File name and optional dialect/output/collision options.
  *
  * Results:
  *      Returns TCL_OK if the file is opened, at least one plot is found, and a handle command is created.
@@ -5007,7 +5390,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *      On error, releases owned resources and closes the channel.
  *
  * Notes:
- *      Numeric data is not cached at open time; vector and allvectors subcommands decode it lazily.
+ *      Numeric data is not cached at open time; vector and vectors subcommands decode it lazily.
  *      ReadHeader() consumes the Binary: or Values: marker and leaves the channel at the data block.
  *      The returned handle command owns the RawFile and releases it through RawFileDeleteProc().
  *      rawHandleCounter is used only to generate unique handle command names.
@@ -5024,7 +5407,11 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     Tcl_Obj *fileNameObj;
     const char *name;
     RawDialect dialect;
-    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj) != TCL_OK) {
+    RawOutputOptions output = {0, 0};
+    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (output.vectors && RawRbcInit(interp) != TCL_OK) {
         return TCL_ERROR;
     }
     chan = Tcl_FSOpenFileChannel(interp, fileNameObj, "r", 0);
@@ -5044,6 +5431,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     rf->interp = interp;
     rf->chan = chan;
     rf->dialect = dialect;
+    rf->output = output;
     rf->encKind = encKind;
     rf->enc = enc;
     for (;;) {

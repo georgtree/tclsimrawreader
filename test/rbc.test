@@ -1,0 +1,248 @@
+package require tcltest
+namespace import ::tcltest::*
+package require tclsimrawreader
+
+set currentDir [file normalize [file dirname [info script]]]
+set dcPath [file join $currentDir raw_files ngspice dc.raw]
+
+# A list read must not load RBC, including when direct vector support was compiled in.
+test rawOutput-list-default {default list output does not load RBC} -body {
+    set before [package provide rbc::vector]
+    set r [::tclsimrawreader::openraw $dcPath]
+    set values [$r vector v(out)]
+    $r close
+    list [expr {[llength $values] > 0}] [expr {$before eq [package provide rbc::vector]}]
+} -result {1 1}
+
+test rawOutput-bad-output {validate output option} -body {
+    ::tclsimrawreader::openraw $dcPath -output other
+} -returnCodes error -result {bad -output value "other": must be list or vector}
+
+test rawOutput-bad-collision {validate collision option} -body {
+    ::tclsimrawreader::openraw -ifexists other $dcPath
+} -returnCodes error -result {bad -ifexists value "other": must be error or replace}
+
+set haveVectors 0
+if {![catch {package require rbc::vector}]} {
+    if {[catch {::tclsimrawreader::openraw $dcPath -output vector} probe]} {
+        if {$probe ne {tclsimrawreader was built without RBC vector support}} {
+            error $probe
+        }
+    } else {
+        set haveVectors 1
+        $probe close
+    }
+}
+
+if {$haveVectors} {
+    namespace eval ::rawVectorTests {}
+    proc ::rawVectorTests::ReadColumns {r plot selection args} {
+        namespace eval ::rawVectorTests::data {}
+        set names [namespace eval ::rawVectorTests::data \
+                       [list $r vectors -plot $plot $selection -output vector {*}$args]]
+        set types {}
+        foreach variable [dict get [$r header -plot $plot] variables] {
+            dict set types [dict get $variable name] [expr {[dict get $variable storage] eq "complex128" ? "complex" : "real"}]
+        }
+        set values {}
+        try {
+            dict for {rawName command} $names {
+                if {[$command variable] ne {}} {error "unexpected array mapping"}
+                if {[$command type] ne [dict get $types $rawName]} {error "wrong vector numeric type"}
+                dict set values $rawName [$command index :]
+            }
+        } finally {
+            if {[dict size $names]} {rbc::vector destroy {*}[dict values $names]}
+        }
+        return $values
+    }
+
+    # Exercise every checked-in raw fixture, every plot and both full and partial selections.
+    # The established list reader provides the independently exercised expected values and result keys.
+    foreach vendor {ngspice xyce ltspice} {
+        foreach path [lsort [glob -nocomplain [file join $currentDir raw_files $vendor *.raw]]] {
+            set dialect [expr {$vendor eq "ltspice" ? "ltspice" : "generic"}]
+            test rawOutput-fixture-$vendor-[file tail $path] {real/complex, binary/ASCII, plot and range parity} -body {
+                set r [::tclsimrawreader::openraw -dialect $dialect $path]
+                set matches 1
+                try {
+                    set plotCount [llength [$r plots]]
+                    for {set plot 0} {$plot < $plotCount} {incr plot} {
+                        set expected [$r vectors -plot $plot -all]
+                        set actual [::rawVectorTests::ReadColumns $r $plot -all]
+                        if {$expected ne $actual} {set matches 0; break}
+                        set selection [lrange [$r names -plot $plot] 0 1]
+                        set count [expr {min(3, [$r npoints -plot $plot])}]
+                        set expected [$r vectors -plot $plot $selection -count $count]
+                        set actual [::rawVectorTests::ReadColumns $r $plot $selection -count $count]
+                        if {$expected ne $actual} {set matches 0; break}
+                    }
+                } finally {
+                    $r close
+                }
+                set matches
+            } -result 1
+        }
+    }
+
+    test rawOutput-defaults {handle defaults, per-call overrides and vector lifetime} -setup {
+        set r [::tclsimrawreader::openraw $dcPath -output vector -ifexists replace]
+    } -body {
+        namespace eval ::rawVectorTests::data [list set r $r]
+        set answer [namespace eval ::rawVectorTests::data {
+            set name [$r vector v(out) -count 3]
+            set expected [$r vector v(out) -count 3 -output list]
+            set same [expr {$expected eq [$name index :]}]
+            set replaced [$r vector -ifexists replace v(out) -from 1 -count 2]
+            set defaultUnchanged [expr {$replaced eq [$r vector v(out) -count 1]}]
+            set errorCode [catch {$r vector v(out) -ifexists error} message]
+            $r close
+            list $name $same $defaultUnchanged $errorCode [$name length] [$name variable]
+        }]
+        set answer
+    } -result {::rawVectorTests::data::v_28out_29 1 1 1 1 {}} -cleanup {
+        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+    }
+
+    test rawOutput-empty {zero-length vectors and empty selection} -setup {
+        set r [::tclsimrawreader::openraw $dcPath]
+    } -body {
+        set name [namespace eval ::rawVectorTests::data [list $r vector v(out) -output vector -count 0]]
+        list [$name length] [$r vectors {} -output vector]
+    } -result {0 {}} -cleanup {
+        $r close
+        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+    }
+
+    test rawOutput-command-collision {replace must not overwrite an unrelated command} -setup {
+        set r [::tclsimrawreader::openraw $dcPath]
+        proc ::rawVectorTests::data::v_28out_29 {} {return preserved}
+    } -body {
+        set code [catch {namespace eval ::rawVectorTests::data \
+                             [list $r vector v(out) -output vector -ifexists replace]} message]
+        list $code $message [::rawVectorTests::data::v_28out_29]
+    } -result {1 {command "::rawVectorTests::data::v_28out_29" already exists and is not an RBC vector} preserved} -cleanup {
+        $r close
+        rename ::rawVectorTests::data::v_28out_29 {}
+    }
+
+    test rawOutput-type-collision {replacement preserves immutable numeric types} -setup {
+        set r [::tclsimrawreader::openraw $dcPath]
+        rbc::vector create ::rawVectorTests::data::v_28out_29 -type complex
+        ::rawVectorTests::data::v_28out_29 set {{7 8}}
+    } -body {
+        set code [catch {namespace eval ::rawVectorTests::data \
+                             [list $r vector v(out) -output vector -ifexists replace]} message]
+        list $code $message [::rawVectorTests::data::v_28out_29 index :]
+    } -result {1 {vector "::rawVectorTests::data::v_28out_29" has a different numeric type} {{7.0 8.0}}} -cleanup {
+        $r close
+        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+    }
+
+    test rawOutput-scalar {creating a vector leaves an unrelated Tcl scalar untouched} -setup {
+        set r [::tclsimrawreader::openraw $dcPath]
+        set ::rawVectorTests::data::v_28out_29 keep
+    } -body {
+        set command [namespace eval ::rawVectorTests::data [list $r vector v(out) -output vector -count 1]]
+        list $::rawVectorTests::data::v_28out_29 [$command variable] [$command length]
+    } -result {keep {} 1} -cleanup {
+        $r close
+        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+        unset ::rawVectorTests::data::v_28out_29
+    }
+
+    test rawOutput-encoding {encoding is unambiguous and raw names cannot inject namespaces} -setup {
+        set path [makeFile {Title: names
+Date: today
+Plotname: DC
+Flags: real
+No. Variables: 4
+No. Points: 2
+Variables:
+0 time time
+1 v(out) voltage
+2 v_28out_29 voltage
+3 sub::node voltage
+Values:
+0 0 1 2 3
+1 1 4 5 6
+} raw_output_names.raw]
+        set r [::tclsimrawreader::openraw $path]
+    } -body {
+        set names [namespace eval ::rawVectorTests::data [list $r vectors -all -output vector]]
+        list [dict keys $names] [dict values $names]
+    } -result {{time v(out) v_28out_29 sub::node} {::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29 ::rawVectorTests::data::v_5F28out_5F29 ::rawVectorTests::data::sub_3A_3Anode}} -cleanup {
+        $r close
+        rbc::vector destroy {*}[dict values $names]
+        removeFile raw_output_names.raw
+    }
+
+    test rawOutput-preflight {a late collision does not create any earlier destinations} -setup {
+        set r [::tclsimrawreader::openraw $dcPath]
+        rbc::vector create ::rawVectorTests::data::v_28out_29 -variable {}
+        ::rawVectorTests::data::v_28out_29 set {91 92}
+    } -body {
+        set before [lsort [rbc::vector names ::rawVectorTests::data::*]]
+        catch {namespace eval ::rawVectorTests::data [list $r vectors -all -output vector]} message
+        list [expr {$before eq [lsort [rbc::vector names ::rawVectorTests::data::*]]}] \
+             [::rawVectorTests::data::v_28out_29 index :]
+    } -result {1 {91.0 92.0}} -cleanup {
+        $r close
+        rbc::vector destroy ::rawVectorTests::data::v_28out_29
+    }
+
+    test rawOutput-read-failure {malformed data does not replace any existing values} -setup {
+        set path [makeFile {Title: broken
+Date: today
+Plotname: DC
+Flags: real
+No. Variables: 2
+No. Points: 2
+Variables:
+0 time time
+1 v(out) voltage
+Values:
+0 0 1
+1 1 bad
+} raw_output_broken.raw]
+        set r [::tclsimrawreader::openraw $path]
+        rbc::vector create ::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29 -variable {}
+        ::rawVectorTests::data::time set {91 92}
+        ::rawVectorTests::data::v_28out_29 set {93 94}
+    } -body {
+        set code [catch {namespace eval ::rawVectorTests::data \
+                            [list $r vectors -all -output vector -ifexists replace]} message]
+        list $code [::rawVectorTests::data::time index :] [::rawVectorTests::data::v_28out_29 index :]
+    } -result {1 {91.0 92.0} {93.0 94.0}} -cleanup {
+        $r close
+        rbc::vector destroy ::rawVectorTests::data::time ::rawVectorTests::data::v_28out_29
+        removeFile raw_output_broken.raw
+    }
+
+    test rawOutput-loader-close {package initialization may close the handle without freeing active storage} -setup {
+        set rawLibrary [lindex [lsearch -inline -index 1 [info loaded] Tclsimrawreader] 0]
+        set rbcLibrary [lindex [lsearch -inline -index 1 [info loaded] Rbc] 0]
+        interp create rawChild
+        rawChild eval [list load $rawLibrary Tclsimrawreader]
+        set handle [rawChild eval [list ::tclsimrawreader::openraw $dcPath]]
+        set loader [list $handle close]
+        append loader "\n" [list load $rbcLibrary Rbc]
+        rawChild eval [list package ifneeded rbc::vector [package present rbc::vector] $loader]
+    } -body {
+        rawChild eval [list $handle vector v(out) -output vector]
+    } -returnCodes error -result {raw handle was closed while loading RBC} -cleanup {
+        interp delete rawChild
+    }
+
+    namespace delete ::rawVectorTests
+} else {
+    test rawOutput-unavailable {vector requests fail clearly without changing list behavior} -body {
+        set r [::tclsimrawreader::openraw $dcPath]
+        set code [catch {$r vector v(out) -output vector} message]
+        set result [list $code [expr {[llength [$r vector v(out)]] > 0}]]
+        $r close
+        set result
+    } -result {1 1}
+}
+
+cleanupTests

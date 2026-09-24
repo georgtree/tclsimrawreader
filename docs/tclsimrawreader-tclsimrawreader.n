@@ -5,7 +5,7 @@
 .SH NAME
 tclsimrawreader - Commands in namespace tclsimrawreader
 .SH SYNOPSIS
-\fBopenraw\fP \fI?-dialect name? filepath\fP
+\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath\fP
 .br
 \fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
 .br
@@ -17,9 +17,9 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .br
 \fBRAWFILE plots\fP
 .br
-\fBRAWFILE vector\fP \fIname ?-plot index? ?-from index? ?-count index?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
 .br
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
 .br
 .SH ::TCLSIMRAWREADER
 .SH COMMANDS
@@ -32,7 +32,7 @@ Open channel to provided \&.raw file, creates subcommand, parses header(s) infor
 Every ::tclsimrawreader::openraw returns a command (e\&.g\&. ::tclsimrawreader::s1)\&. The following
 subcommands operate on that file instance\&.
 .RS 4n
-\fBopenraw\fP \fI?-dialect name? filepath\fP
+\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath\fP
 .br
 .RE
 .PP
@@ -41,6 +41,12 @@ subcommands operate on that file instance\&.
 .TP
 -dialect name
 Optional dialect, possible values are generic and ltspice, default is generic
+.TP
+-ifexists policy
+Default collision policy, error or replace; default is error
+.TP
+-output mode
+Default output, list or vector; default is list
 .TP
 filepath
 Path to SPICE \&.raw file\&.
@@ -53,6 +59,7 @@ Example:
 .RS 4n
 .nf
 set rawfile [tclsimrawreader::openraw /path/to/ac\&.raw]
+set rawfile [tclsimrawreader::openraw /path/to/ac\&.raw -output vector -ifexists replace]
 set rawfile [tclsimrawreader::openraw -dialect ltspice /path/to/ac\&.raw]
 .fi
 .RE
@@ -91,10 +98,10 @@ Returns list of vectors' names defined in the header\&. If provided without -plo
 Returns list of dictionaries containing information about the plots in the \&.raw file\&. list of dictionaries\&.
 .TP
 \fIvector\fP
-Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values\&.
+Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values in list mode, or fully qualified RBC vector command name in vector mode\&.
 .TP
 \fIvectors\fP
-Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values\&.
+Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified\&. If plot index is not provided, return values from the first plot\&. dictionary of original raw names to value lists, or to fully qualified RBC command names\&.
 .RE
 .PP
 Refer to the documentation of each subcommand for details\&.
@@ -287,9 +294,9 @@ list of dictionaries
 .PP
 Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
 index is not provided, return values from the first plot\&.
-list of values
+list of values in list mode, or fully qualified RBC vector command name in vector mode
 .RS 4n
-\fBRAWFILE vector\fP \fIname ?-plot index? ?-from index? ?-count index?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
 .br
 .RE
 .PP
@@ -302,6 +309,12 @@ Number of values from the number provided by -from, or from the start otherwise,
 -from index
 Number of the values from the start of the vector, optional, integer\&.
 .TP
+-ifexists policy
+Override collision handling for this call: error or replace
+.TP
+-output mode
+Override the handle output for this call: list or vector
+.TP
 -plot index
 Index of the plot, optional\&.
 .TP
@@ -310,6 +323,11 @@ Name of the vector (variable)
 .RE
 .PP
 \fBDescription\fR
+.PP
+In vector mode, names are reversibly encoded for RBC (for example v(out) becomes v_28out_29) and
+qualified in the calling namespace\&. New vectors have no mapped Tcl arrays and outlive the raw handle\&.
+Complex raw data creates complex RBC vectors\&. Replacement preserves same-type vector identity; an
+unrelated command or a numeric type mismatch is an error\&. See the start page for naming and ownership\&.
 .PP
 Example:
 .PP
@@ -327,7 +345,7 @@ $rawfile vector ID(M1)
 .PP
 Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
 index is not provided, return values from the first plot\&.
-list of values
+list of values in list mode, or fully qualified RBC vector command name in vector mode
 .PP
 .RS -4n
 \fBRAWFILE vectors\fR (::tclsimrawreader)
@@ -335,9 +353,9 @@ list of values
 .PP
 Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
 if specified\&. If plot index is not provided, return values from the first plot\&.
-list of values
+dictionary of original raw names to value lists, or to fully qualified RBC command names
 .RS 4n
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
 .br
 .RE
 .PP
@@ -353,11 +371,20 @@ Number of values from the number provided by -from, or from the start otherwise,
 -from index
 Number of the values from the start of the vector, optional, integer\&.
 .TP
+-ifexists policy
+Override collision handling for this call: error or replace
+.TP
+-output mode
+Override the handle output for this call: list or vector
+.TP
 -plot index
 Index of the plot, optional\&.
 .RE
 .PP
 \fBDescription\fR
+.PP
+Options do not change the handle defaults\&. Vector naming, types, collision handling and ownership follow
+the single-vector command\&. All selected data is decoded before any destination data is replaced\&.
 .PP
 Example:
 .PP
@@ -376,7 +403,7 @@ $rawfile vectors -plot 2 -all
 .PP
 Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
 if specified\&. If plot index is not provided, return values from the first plot\&.
-list of values
+dictionary of original raw names to value lists, or to fully qualified RBC command names
 
 
 .SH SEE ALSO
