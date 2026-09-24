@@ -159,3 +159,30 @@ Numeric data is decoded into buffers directly, without a full intermediate Tcl l
 and all known name/type collisions are checked before publication, so read and preflight errors leave existing
 values unchanged. RBC notifications and command traces may execute application callbacks during publication;
 updates are not a transaction against reentrant application code.
+
+## Installation layout and removal
+
+Installation follows the rbc-tk9 layout and honors the directories selected by `configure`:
+
+- The package library, Tcl scripts and `pkgIndex.tcl` go together in `$(libdir)/$(PACKAGE_NAME)$(PACKAGE_VERSION)`.
+- Any public headers and stub client sources go in `$(includedir)`; executable binaries go in `$(bindir)`.
+- Manpages go in `$(mandir)/mann`.
+- HTML documentation, its image/static resources, and `LICENSE` go in `$(datadir)/$(PACKAGE_NAME)$(PACKAGE_VERSION)/doc`.
+
+Use `--prefix`, `--libdir`, `--includedir`, `--datadir` and `--mandir` at configure time to change these locations.
+All install and uninstall targets honor `DESTDIR` for staging:
+
+```sh
+./configure --prefix=/your/prefix
+make
+make install DESTDIR=/your/staging/root
+make uninstall DESTDIR=/your/staging/root
+```
+
+`make uninstall` runs `uninstall-binaries`, `uninstall-libraries` and `uninstall-doc`. It removes the package-owned
+runtime directory, but removes only this package's named files from shared binary, include and documentation paths.
+Unrelated documentation files are retained; empty documentation directories are removed. Keep the configured build
+and source tree to uninstall the corresponding installation, and use the same path overrides for install and uninstall.
+
+`DOC_INSTALL_DIR` can override the complete HTML destination. As in rbc-tk9, its default already includes `DESTDIR`;
+when overriding it explicitly, include the staging root yourself if needed.

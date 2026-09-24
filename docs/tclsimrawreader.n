@@ -1,7 +1,7 @@
 '\"
 '\" '\" Copyright (c) George Yashin
 '\"
-.TH "tclsimrawreader" 3tcl 0\&.1 "tclsimrawreader" "Tcl NgspiceTclBridge package"
+.TH "tclsimrawreader" 3tcl 0\&.5 "tclsimrawreader" "Tcl NgspiceTclBridge package"
 .SH NAME
 Introduction - Tcl NgspiceTclBridge package
 .SH "TCLSIMRAWREADER - READ SPICE \&.RAW FILES WITH TCL"
