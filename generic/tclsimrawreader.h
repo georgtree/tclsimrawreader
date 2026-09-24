@@ -49,7 +49,7 @@ typedef struct RawNumericColumn {
 int RawRbcInit(Tcl_Interp *interp);
 int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNumericColumn *columns, int replace,
                   int dictionary, Tcl_Obj **resultPtr);
-Tcl_Obj *RawRbcName(Tcl_Interp *interp, const char *rawName);
+Tcl_Obj *RawRbcName(const char *ns, const char *rawName);
 int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *name, int complex, int replace);
 
 typedef enum RawDialect { RAW_DIALECT_GENERIC, RAW_DIALECT_LTSPICE } RawDialect;
@@ -153,6 +153,7 @@ typedef struct RawFile {
      *-----------------------------------------------------------------------------------------------------------------*/
     Tcl_Channel chan; /* Open raw-file channel, kept for lazy vector/dict reads */
     RawDialect dialect;
+    Tcl_Obj *vectorNamespace; /* Explicit canonical destination, or NULL for the read caller. */
     RawOutputOptions output; /* Defaults copied for each vector/vectors call. */
     EncKind encKind;  /* Detected raw header/text encoding kind */
     Tcl_Encoding enc; /* Tcl encoding handle for decoded text, or NULL when not needed */

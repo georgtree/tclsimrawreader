@@ -98,12 +98,12 @@ Set handle defaults with `-output list|vector` and `-ifexists error|replace`. De
 Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
 
 ```tcl
-set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error]
+set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error -namespace ::wave]
 set signal [$raw vector v(out)]
-# -> ::v(out), if called from the global namespace
+# -> ::wave::v(out)
 set values [$signal index :]
 set commands [$raw vectors {time v(out)} -ifexists replace]
-# -> time ::time v(out) ::v(out)
+# -> time ::wave::time v(out) ::wave::v(out)
 set values [$raw vector v(out) -output list]
 $raw close
 # Created vectors remain alive and are owned by the caller.
@@ -211,3 +211,23 @@ subdirectories inside that prefix are preserved. `DESTDIR` is not included in ar
 not write to the configured system prefix. `DIST_ROOT` and `DIST_NAME` may be overridden to choose the archive output
 directory and name; `DIST_NAME` must be a single directory name. Run `dist-clean` separately, not alongside `dist`
 or `dist-zip` in the same parallel make invocation.
+
+### Vector destination namespace
+
+`openraw` accepts `-namespace name` as a handle-level default for vector output from both `vector` and `vectors`.
+The namespace and any missing parents are created when the handle is opened. Relative names resolve against the
+opening caller, and the canonical name is retained for reads from any namespace. An empty name is rejected.
+
+```tcl
+set raw [tclsimrawreader::openraw transient.raw -namespace ::wave -output vector]
+set timeVector [$raw vector time]
+# -> ::wave::time (does not collide with Tcl's ::time command)
+set columns [$raw vectors -all -ifexists replace]
+$raw close
+# ::wave and its output vectors remain alive.
+```
+
+Omitting `-namespace` preserves the existing per-read calling-namespace behavior. The option does not change list
+results, does not require RBC in list-only use, and also applies when a list-default handle reads with `-output vector`.
+Collision policies are unchanged: `replace` updates only a compatible RBC vector, never an unrelated Tcl command.
+Namespaces are created at handle construction, not on every read. The handle never owns or deletes the namespace.

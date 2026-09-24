@@ -142,7 +142,7 @@ static int RawLtspiceAppendAsciiSegmentPlots(Tcl_Interp *interp, RawFile *rf, Ra
                                              Tcl_Size *counts, Tcl_Size numSteps);
 static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size declaredPoints);
 static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output);
+                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output, Tcl_Obj **namespaceOption);
 static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
 static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
                          Tcl_Size *fromPtr, Tcl_Size *countPtr, RawOutputOptions *output);
@@ -533,6 +533,9 @@ static int RawFileAppendPlotMove(Tcl_Interp *interp, RawFile *rf, RawPlot *plot)
  */
 static void RawFileFree(void *clientData) {
     RawFile *rf = (RawFile *)clientData;
+    if (rf->vectorNamespace) {
+        Tcl_DecrRefCount(rf->vectorNamespace);
+    }
     if (rf->chan) {
         Tcl_Close(NULL, rf->chan);
         rf->chan = NULL;
@@ -4648,13 +4651,44 @@ static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj 
     return TCL_OK;
 }
 
+//***  ResolveOutputNamespace function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ * ResolveOutputNamespace -- Resolve an explicit destination relative to the caller and create missing parents.
+ * Returns a retained, canonical namespace name, or NULL with an error. The namespace is not owned by the handle.
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static Tcl_Obj *ResolveOutputNamespace(Tcl_Interp *interp, Tcl_Obj *option) {
+    const char *name = Tcl_GetString(option);
+    if (*name == '\0') {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("-namespace must not be empty", -1));
+        return NULL;
+    }
+    const char *current = Tcl_GetCurrentNamespace(interp)->fullName;
+    Tcl_Obj *qualified = strncmp(name, "::", 2) == 0
+                             ? option
+                             : Tcl_ObjPrintf("%s%s%s", current, strcmp(current, "::") == 0 ? "" : "::", name);
+    Tcl_IncrRefCount(qualified);
+    Tcl_Namespace *ns = Tcl_FindNamespace(interp, Tcl_GetString(qualified), NULL, 0);
+    if (ns == NULL) {
+        ns = Tcl_CreateNamespace(interp, Tcl_GetString(qualified), NULL, NULL);
+    }
+    Tcl_Obj *result = NULL;
+    if (ns != NULL) {
+        result = Tcl_NewStringObj(ns->fullName, -1);
+        Tcl_IncrRefCount(result);
+    }
+    Tcl_DecrRefCount(qualified);
+    return result;
+}
+
 //***  RawParseOpenArgs function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawParseOpenArgs --
  *
- *      Also parses handle defaults -output list|vector and -ifexists error|replace, before or after the file name.
+ *      Parses output/collision defaults and a borrowed -namespace option, before or after the file name.
  *
  *      Parses arguments for the openraw command.
  *
@@ -4680,7 +4714,7 @@ static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj 
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output) {
+                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output, Tcl_Obj **namespaceOption) {
     RawDialect dialect = RAW_DIALECT_GENERIC;
     Tcl_Obj *fileNameObj = NULL;
     for (Tcl_Size i = 1; i < objc; i++) {
@@ -4688,7 +4722,7 @@ static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const ob
         if (strcmp(option, "--") == 0 && i + 2 == objc && fileNameObj == NULL) {
             fileNameObj = objv[++i];
         } else if (strcmp(option, "-dialect") == 0 || strcmp(option, "-output") == 0 ||
-                   strcmp(option, "-ifexists") == 0) {
+                   strcmp(option, "-ifexists") == 0 || strcmp(option, "-namespace") == 0) {
             if (++i >= objc) {
                 Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
                 return TCL_ERROR;
@@ -4703,6 +4737,8 @@ static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const ob
                     Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", value));
                     return TCL_ERROR;
                 }
+            } else if (strcmp(option, "-namespace") == 0) {
+                *namespaceOption = objv[i];
             } else if (RawParseOutputOption(interp, option, objv[i], output) != TCL_OK) {
                 return TCL_ERROR;
             }
@@ -4710,13 +4746,15 @@ static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const ob
             fileNameObj = objv[i];
         } else {
             Tcl_WrongNumArgs(interp, 1, objv,
-                             "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? fileName");
+                             "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? ?-namespace "
+                             "name? fileName");
             return TCL_ERROR;
         }
     }
     if (fileNameObj == NULL) {
-        Tcl_WrongNumArgs(interp, 1, objv,
-                         "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? fileName");
+        Tcl_WrongNumArgs(
+            interp, 1, objv,
+            "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? fileName");
         return TCL_ERROR;
     }
     *dialectPtr = dialect;
@@ -4917,8 +4955,9 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *
  *      Decodes selected columns into owned numeric buffers and publishes real/complex RBC vectors only after the
  *      complete read succeeds. Binary reads remain chunked; ASCII reads reuse the existing point/token parser.
- *      No per-sample Tcl objects are created. Destination names and collisions are checked before reading and
- *      rechecked at publication. Returns a vector command name, or a raw-name to vector-name dictionary.
+ *      No per-sample Tcl objects are created. An explicit handle namespace overrides the read caller. Names and
+ * collisions are checked before reading and rechecked at publication. Returns a vector command name, or a raw-name to
+ * vector-name dictionary.
  *
  * Parameters:
  *      rf/plot                 - Open handle and selected plot; caller preserves rf across this operation.
@@ -4963,7 +5002,9 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     for (Tcl_Size i = 0; i < numVars; i++) {
         RawVariable *variable = &h->variables[varIndexes[i]];
         Tcl_Size components = variable->storage == RAW_VALUE_COMPLEX128 ? 2 : 1;
-        names[i] = RawRbcName(interp, variable->name);
+        names[i] = RawRbcName(rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
+                                                  : Tcl_GetCurrentNamespace(interp)->fullName,
+                              variable->name);
         Tcl_IncrRefCount(names[i]);
         for (Tcl_Size j = 0; j < i; j++) {
             if (strcmp(Tcl_GetString(names[i]), Tcl_GetString(names[j])) == 0) {
@@ -5366,7 +5407,8 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *
  * RawOpenCmd --
  *
- *      Stores output/collision defaults. Vector output initializes RBC before opening the file; list output does not.
+ *      Stores output/collision defaults and an optional canonical namespace. Missing destination namespaces are created.
+ *      Vector output initializes RBC before opening the file; list output does not.
  *
  *      Opens a SPICE raw file, scans its plots, and creates a Tcl handle command for lazy data access.
  *
@@ -5374,7 +5416,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *      void *clientData      - Unused.
  *      Tcl_Interp *interp    - Interpreter used for command creation, results, and error reporting.
  *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - File name and optional dialect/output/collision options.
+ *      Tcl_Obj *const objv[] - File name and optional dialect/output/collision/namespace options.
  *
  * Results:
  *      Returns TCL_OK if the file is opened, at least one plot is found, and a handle command is created.
@@ -5408,22 +5450,39 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     const char *name;
     RawDialect dialect;
     RawOutputOptions output = {0, 0};
-    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output) != TCL_OK) {
+    Tcl_Obj *namespaceOption = NULL;
+    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output, &namespaceOption) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    Tcl_Obj *nsName = namespaceOption ? ResolveOutputNamespace(interp, namespaceOption) : NULL;
+    if (namespaceOption && nsName == NULL) {
         return TCL_ERROR;
     }
     if (output.vectors && RawRbcInit(interp) != TCL_OK) {
+        if (nsName) {
+            Tcl_DecrRefCount(nsName);
+        }
         return TCL_ERROR;
     }
     chan = Tcl_FSOpenFileChannel(interp, fileNameObj, "r", 0);
     if (chan == NULL) {
+        if (nsName) {
+            Tcl_DecrRefCount(nsName);
+        }
         return TCL_ERROR;
     }
     if (Tcl_SetChannelOption(interp, chan, "-translation", "binary") != TCL_OK) {
         Tcl_Close(interp, chan);
+        if (nsName) {
+            Tcl_DecrRefCount(nsName);
+        }
         return TCL_ERROR;
     }
     if (DetectEncoding(interp, chan, &encKind, &enc) != TCL_OK) {
         Tcl_Close(interp, chan);
+        if (nsName) {
+            Tcl_DecrRefCount(nsName);
+        }
         return TCL_ERROR;
     }
     rf = (RawFile *)Tcl_Alloc(sizeof *rf);
@@ -5432,6 +5491,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     rf->chan = chan;
     rf->dialect = dialect;
     rf->output = output;
+    rf->vectorNamespace = nsName;
     rf->encKind = encKind;
     rf->enc = enc;
     for (;;) {

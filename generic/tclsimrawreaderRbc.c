@@ -40,7 +40,7 @@ int RawRbcInit(Tcl_Interp *interp) {
  *
  * RawRbcName --
  *
- *      Returns an unreferenced Tcl object containing the destination in the caller's current namespace. Safe
+ *      Returns an unreferenced Tcl object containing the destination in the selected namespace. Safe
  *      literal RBC names retain their spelling, including balanced parentheses and underscores. Names containing
  *      namespace separators, unsupported characters, unbalanced parentheses or the reserved _raw_ prefix are
  *      encoded as _raw_ followed by uppercase hexadecimal UTF-8 bytes. Reserving this prefix makes fallback names
@@ -48,9 +48,9 @@ int RawRbcInit(Tcl_Interp *interp) {
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-Tcl_Obj *RawRbcName(Tcl_Interp *interp, const char *rawName) {
+Tcl_Obj *RawRbcName(const char *ns, const char *rawName) {
     static const char hex[] = "0123456789ABCDEF";
-    Tcl_Obj *name = Tcl_NewStringObj(Tcl_GetCurrentNamespace(interp)->fullName, -1);
+    Tcl_Obj *name = Tcl_NewStringObj(ns, -1);
     Tcl_Size depth = 0;
     size_t length = strlen(rawName);
     int literal = (length > 0 && rawName[0] != ':' && rawName[length - 1] != ':' && strstr(rawName, "::") == NULL &&

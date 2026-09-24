@@ -50,7 +50,9 @@ uses RBC’s Tcl command with <code class="docutils literal notranslate"><span c
 specifications and ordinary real names cannot create mapped arrays. No Tcl script is assembled from raw
 names; creation uses <code class="docutils literal notranslate"><span class="pre">Tcl_EvalObjv</span></code>. Safe literal names retain their spelling; unsupported names, namespace
 separators, and the reserved <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> prefix are encoded as <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> plus hexadecimal UTF-8 bytes. This keeps
-literal and encoded names disjoint and confines creation to the read caller’s namespace.</p>
+literal and encoded names disjoint and confines creation to the explicit handle namespace when supplied,
+or the read caller’s namespace otherwise. The explicit namespace is created and captured at open time;
+the handle retains its name, not ownership of the namespace.</p>
 <p>All selected data is decoded before publication. Known collisions and type mismatches are preflighted.
 Newly created commands are removed if publication fails; existing vectors are never deleted. Client
 notifications can execute reentrant application code, so callback-induced failures are not fully atomic.

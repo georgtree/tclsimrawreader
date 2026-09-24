@@ -99,12 +99,12 @@ variable startPage {
     Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
 
     ```tcl
-    set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error]
+    set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error -namespace ::wave]
     set signal [$raw vector v(out)]
-    # -> ::v(out), if called from the global namespace
+    # -> ::wave::v(out)
     set values [$signal index :]
     set commands [$raw vectors {time v(out)} -ifexists replace]
-    # -> time ::time v(out) ::v(out)
+    # -> time ::wave::time v(out) ::wave::v(out)
     set values [$raw vector v(out) -output list]
     $raw close
     # Created vectors remain alive and are owned by the caller.
@@ -115,6 +115,12 @@ variable startPage {
     dialects and multi-plot handling work in both output modes. In vector mode, `vector` returns one fully qualified
     command name; `vectors` returns a dictionary whose original raw-name keys map to fully qualified command names.
     An empty selection returns an empty dictionary. A zero-length range creates an empty vector.
+
+    An explicit `openraw -namespace name` selects a fixed destination for all vector reads. Relative names resolve
+    against the opening caller; missing namespaces and parents are created at open time. The qualified name is
+    retained for reads from other namespaces. Without this option, destinations use the read caller as before.
+    Empty namespace names are rejected. This option also works with list defaults and later `-output vector`
+    overrides. Closing the handle deletes neither the namespace nor its caller-owned output vectors.
 
     ### Destination names and ownership
 

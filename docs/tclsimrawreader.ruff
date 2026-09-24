@@ -8,6 +8,10 @@ namespace eval ::tclsimrawreader {
         #  -dialect name - optional dialect, possible values are `generic` and `ltspice`, default is `generic`
         #  -output mode - default output, `list` or `vector`; default is `list`
         #  -ifexists policy - default collision policy, `error` or `replace`; default is `error`
+        #  -namespace name - fixed destination namespace for all vector output; created with missing parents at open
+        # Relative namespace names resolve against the caller opening the handle. Empty names are rejected.
+        # If omitted, vector destinations continue to use the namespace calling each read. Closing the handle does
+        # not delete the namespace or output vectors. The option also works with list defaults and later vector overrides.
         #  filepath - path to SPICE .raw file
         # Returns: command name to work with the file, references as `RAWFILE` later
         #
@@ -17,7 +21,7 @@ namespace eval ::tclsimrawreader {
         # set rawfile [tclsimrawreader::openraw /path/to/ac.raw -output vector -ifexists replace]
         # set rawfile [tclsimrawreader::openraw -dialect ltspice /path/to/ac.raw]
         #```
-        # Synopsis: ?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath
+        # Synopsis: ?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath
     }
 }
 
@@ -95,7 +99,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -output mode - override the handle output for this call: `list` or `vector`
         #  -ifexists policy - override collision handling for this call: `error` or `replace`
         # In vector mode, safe literal names (including `v(out)` and `v(1)`) are preserved and qualified in the
-        # calling namespace. Unsupported/namespace-bearing names and names beginning with the reserved `_raw_`
+        # handle namespace, if configured, or the calling namespace otherwise. Unsupported/namespace-bearing names and names beginning with the reserved `_raw_`
         # prefix become `_raw_` plus uppercase hexadecimal UTF-8 bytes. Original dictionary keys are unchanged.
         # Requires RBC's `-literal true` creation support. New vectors have no mapped arrays and outlive the handle.
         # Complex raw data creates complex RBC vectors. Replacement preserves same-type vector identity; an

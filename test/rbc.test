@@ -22,6 +22,18 @@ test rawOutput-bad-collision {validate collision option} -body {
     ::tclsimrawreader::openraw -ifexists other $dcPath
 } -returnCodes error -result {bad -ifexists value "other": must be error or replace}
 
+test rawNamespace-list {create nested destination without loading RBC; close retains namespace} -body {
+    set before [package provide rbc::vector]
+    set r [::tclsimrawreader::openraw $dcPath -namespace ::nsRaw::nested]
+    set exists [namespace exists ::nsRaw::nested]
+    $r close
+    list $exists [namespace exists ::nsRaw::nested] [expr {$before eq [package provide rbc::vector]}]
+} -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {1 1 1}
+
+test rawNamespace-empty {empty destination rejected} -body {
+    ::tclsimrawreader::openraw $dcPath -namespace {}
+} -returnCodes error -result {-namespace must not be empty}
+
 set haveVectors 0
 if {![catch {package require rbc::vector}]} {
     if {[catch {::tclsimrawreader::openraw $dcPath -output vector} probe]} {
@@ -307,6 +319,45 @@ Values:
     } -returnCodes error -result {raw handle was closed while loading RBC} -cleanup {
         interp delete rawChild
     }
+
+    test rawNamespace-vector {time vector avoids global Tcl command; snapshot survives close} -body {
+        set path [file join $currentDir raw_files ngspice tran.raw]
+        set r [::tclsimrawreader::openraw $path -namespace ::nsRaw::nested -output vector]
+        set v [$r vector time -count 3]
+        set expected [$r vector time -count 3 -output list]
+        $r close
+        list $v [expr {[$v range 0 end] eq $expected}] [namespace exists ::nsRaw::nested]
+    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {::nsRaw::nested::time 1 1}
+
+    test rawNamespace-dictionary {relative destination captured at creation; complex vectors and list override} -body {
+        namespace eval ::nsRaw {}
+        set path [file join $currentDir raw_files ngspice ac.raw]
+        set r [namespace eval ::nsRaw [list ::tclsimrawreader::openraw $path -namespace child -output vector]]
+        set names [$r vectors -all -count 2]
+        set plain [$r vectors -all -count 2 -output list]
+        set result 1
+        dict for {raw v} $names {
+            if {[namespace qualifiers $v] ne "::nsRaw::child" || [$v range 0 end] ne [dict get $plain $raw]} {
+                set result 0
+            }
+        }
+        list $result [expr {[dict size $names] > 0}]
+    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {1 1}
+
+    test rawNamespace-collision {override list default and enforce replace policy in destination} -body {
+        set r [::tclsimrawreader::openraw $dcPath -namespace ::nsRaw]
+        set name [$r vector v(out) -output vector -count 3]
+        set failed [catch {$r vector v(out) -output vector}]
+        set replaced [$r vector v(out) -output vector -ifexists replace -count 2]
+        list $name $failed [expr {$name eq $replaced}] [$name length]
+    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {::nsRaw::v(out) 1 1 2}
+
+    test rawNamespace-global {explicit root namespace still protects Tcl time command} -body {
+        set path [file join $currentDir raw_files ngspice tran.raw]
+        set r [::tclsimrawreader::openraw $path -namespace ::]
+        catch {$r vector time -output vector -ifexists replace} message
+        set message
+    } -cleanup {catch {$r close}} -result {command "::time" already exists and is not an RBC vector}
 
     namespace delete ::rawVectorTests
 } else {

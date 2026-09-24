@@ -5,7 +5,7 @@
 .SH NAME
 tclsimrawreader - Commands in namespace tclsimrawreader
 .SH SYNOPSIS
-\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath\fP
+\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath\fP
 .br
 \fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
 .br
@@ -32,7 +32,7 @@ Open channel to provided \&.raw file, creates subcommand, parses header(s) infor
 Every ::tclsimrawreader::openraw returns a command (e\&.g\&. ::tclsimrawreader::s1)\&. The following
 subcommands operate on that file instance\&.
 .RS 4n
-\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? filepath\fP
+\fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath\fP
 .br
 .RE
 .PP
@@ -45,14 +45,23 @@ Optional dialect, possible values are generic and ltspice, default is generic
 -ifexists policy
 Default collision policy, error or replace; default is error
 .TP
+-namespace name
+Fixed destination namespace for all vector output; created with missing parents at open\&.
+.TP
 -output mode
 Default output, list or vector; default is list
+.RE
+.PP
+\fBDescription\fR
+.PP
+Relative namespace names resolve against the caller opening the handle\&. Empty names are rejected\&.
+If omitted, vector destinations continue to use the namespace calling each read\&. Closing the handle does
+not delete the namespace or output vectors\&. The option also works with list defaults and later vector overrides\&.
+.RS 4n
 .TP
 filepath
 Path to SPICE \&.raw file\&.
 .RE
-.PP
-\fBDescription\fR
 .PP
 Example:
 .PP
@@ -325,7 +334,7 @@ Name of the vector (variable)
 \fBDescription\fR
 .PP
 In vector mode, safe literal names (including v(out) and v(1)) are preserved and qualified in the
-calling namespace\&. Unsupported/namespace-bearing names and names beginning with the reserved _raw_
+handle namespace, if configured, or the calling namespace otherwise\&. Unsupported/namespace-bearing names and names beginning with the reserved _raw_
 prefix become _raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original dictionary keys are unchanged\&.
 Requires RBC's -literal true creation support\&. New vectors have no mapped arrays and outlive the handle\&.
 Complex raw data creates complex RBC vectors\&. Replacement preserves same-type vector identity; an
