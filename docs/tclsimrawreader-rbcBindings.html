@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>RBC vectors support &#8212; tclsimrawreader  documentation</title>
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
+    <link rel="stylesheet" type="text/css" href="_static/classic.css?v=2bf1fcf8" />
+    
+    <script src="_static/documentation_options.js?v=5929fcd5"></script>
+    <script src="_static/doctools.js?v=9bcbadda"></script>
+    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
+    
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="::tclsimrawreader" href="tclsimrawreader-tclsimrawreader.html" />
+    <link rel="prev" title="tclsimrawreader - read SPICE .raw files with Tcl" href="tclsimrawreader.html" /> 
+  </head><body>
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="tclsimrawreader-tclsimrawreader.html" title="::tclsimrawreader"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw files with Tcl"
+             accesskey="P">previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">RBC vectors support</a></li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body" role="main">
+            
+  <section id="rbc-vectors-support">
+<span id="r-rbc-vectors-support"></span><span id="r-rbc20vectors20support"></span><span id="r-namespaceqz3a3arbcbindings"></span><h1>RBC vectors support<a class="headerlink" href="#rbc-vectors-support" title="Link to this heading">¶</a></h1>
+<section id="optional-rbc-vector-output">
+<span id="r-rbcbindings-optional-rbc-vector-output"></span><span id="r-3a3arbcbindingsqzoptional20rbc20vector20output"></span><h2>Optional RBC vector output<a class="headerlink" href="#optional-rbc-vector-output" title="Link to this heading">¶</a></h2>
+<p>The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency. To enable
+real and complex <a class="reference external" href="https://github.com/georgtree/rbc-tk9">rbc-tk9</a> output, use Tcl 9 and matching RBC 0.8.0
+headers:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./configure<span class="w"> </span>--with-tcl<span class="o">=</span>/path/to/tcl/lib<span class="w"> </span>--with-rbc<span class="o">=</span>/path/to/rbc-tk9
+make<span class="w"> </span>clean
+make
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">--with-rbc</span></code> accepts a source tree, installation prefix, or directory containing <code class="docutils literal notranslate"><span class="pre">rbcVector.h</span></code>, <code class="docutils literal notranslate"><span class="pre">rbcDecls.h</span></code> and
+<code class="docutils literal notranslate"><span class="pre">rbcStubLib.c</span></code>, just as in tclmeasure. The portable stub client is compiled into this package; the RBC shared
+library is not linked. <code class="docutils literal notranslate"><span class="pre">--without-rbc</span></code> selects the default list-only build. Even an enabled build can load and
+read lists without RBC installed. <code class="docutils literal notranslate"><span class="pre">rbc::vector</span></code> is required only when vector output is selected. No Tk
+initialization is needed, although the installed RBC binary must have its system library dependencies available.</p>
+<p>Use an RBC build with literal parenthesized vector names (<code class="docutils literal notranslate"><span class="pre">vector</span> <span class="pre">create</span> <span class="pre">-literal</span> <span class="pre">true</span></code>) and namespace-safe
+vector command deletion. The package version remains <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">0.8.0</span></code>, so an older build with the same
+version number is insufficient. This upgrade does not change the RBC stubs ABI or the optional <code class="docutils literal notranslate"><span class="pre">--with-rbc</span></code>
+configuration.</p>
+<p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. Defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code>.
+Either option can be overridden for a single <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> call, without changing the handle defaults:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>raw<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>error<span class="w"> </span><span class="o">-</span>namespace<span class="w"> </span><span class="o">::</span>wave<span class="k">]</span>
+<span class="k">set</span><span class="w"> </span>signal<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)]</span>
+<span class="c"># -&gt; ::wave::v(out)</span>
+<span class="k">set</span><span class="w"> </span>values<span class="w"> </span><span class="k">[</span><span class="nv">$signal</span><span class="w"> </span><span class="nv">index</span><span class="w"> </span><span class="o">:</span><span class="k">]</span>
+<span class="k">set</span><span class="w"> </span>commands<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="k">{</span><span class="nb">time</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)}</span><span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>replace<span class="k">]</span>
+<span class="c"># -&gt; time ::wave::time v(out) ::wave::v(out)</span>
+<span class="k">set</span><span class="w"> </span>values<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)</span><span class="w"> </span><span class="o">-</span>output<span class="w"> </span>list<span class="k">]</span>
+<span class="nv">$raw</span><span class="w"> </span><span class="nb">close</span>
+<span class="c"># Created vectors remain alive and are owned by the caller.</span>
+</pre></div>
+</div>
+<p>For <code class="docutils literal notranslate"><span class="pre">openraw</span></code>, options may precede or follow the file name. For read commands, <code class="docutils literal notranslate"><span class="pre">-output</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> may
+precede or follow the selection; <code class="docutils literal notranslate"><span class="pre">-plot</span></code> precedes it as before. Existing <code class="docutils literal notranslate"><span class="pre">-from</span></code>, <code class="docutils literal notranslate"><span class="pre">-count</span></code>, selected-name
+lists, <code class="docutils literal notranslate"><span class="pre">-all</span></code>, dialects and multi-plot handling work in both output modes. In vector mode, <code class="docutils literal notranslate"><span class="pre">vector</span></code> returns one
+fully qualified command name; <code class="docutils literal notranslate"><span class="pre">vectors</span></code> returns a dictionary whose original raw-name keys map to fully
+qualified command names.  An empty selection returns an empty dictionary. A zero-length range creates an empty
+vector.</p>
+<p>An explicit <code class="docutils literal notranslate"><span class="pre">openraw</span> <span class="pre">-namespace</span> <span class="pre">name</span></code> selects a fixed destination for all vector reads. Relative names resolve
+against the opening caller; missing namespaces and parents are created at open time. The qualified name is
+retained for reads from other namespaces. Without this option, destinations use the read caller as before.
+Empty namespace names are rejected. This option also works with list defaults and later <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">vector</span></code>
+overrides. Closing the handle deletes neither the namespace nor its caller-owned output vectors.</p>
+<section id="destination-names-and-ownership">
+<span id="r-rbcbindings-destination-names-and-ownership"></span><span id="r-3a3arbcbindingsqzdestination20names20and20ownership"></span><h3>Destination names and ownership<a class="headerlink" href="#destination-names-and-ownership" title="Link to this heading">¶</a></h3>
+<p>Raw names are preserved whenever they are safe literal RBC names. Balanced parentheses, underscores, periods,
+letters, digits, <code class="docutils literal notranslate"><span class="pre">&#64;</span></code> and single interior colons are retained. Vectors are created with <code class="docutils literal notranslate"><span class="pre">-literal</span> <span class="pre">true</span></code>, so
+numeric names such as <code class="docutils literal notranslate"><span class="pre">v(1)</span></code> or <code class="docutils literal notranslate"><span class="pre">v(1)(2:4)</span></code> are never interpreted as length/range specifications. Examples:</p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 50.0%" />
+<col style="width: 50.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Raw name</p></th>
+<th class="head"><p>Destination tail</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">time</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">time</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v(out)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">v(out)</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">v(1)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">v(1)</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v_28out_29</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">v_28out_29</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">L2:flux</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">L2:flux</span></code></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="docutils literal notranslate"><span class="pre">v(a-b)</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">_raw_7628612D6229</span></code></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="docutils literal notranslate"><span class="pre">sub::node</span></code></p></td>
+<td><p><code class="docutils literal notranslate"><span class="pre">_raw_7375623A3A6E6F6465</span></code></p></td>
+</tr>
+</tbody>
+</table>
+<p>Names with unsupported characters, unbalanced parentheses, <code class="docutils literal notranslate"><span class="pre">::</span></code>, a leading/trailing colon, or the reserved
+prefix <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> use a fallback: <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> followed by the uppercase hexadecimal UTF-8 bytes of the complete
+original name.  The empty name maps to <code class="docutils literal notranslate"><span class="pre">_raw_</span></code>. Reserving this prefix keeps fallback names distinct from
+literal names; a raw name that already begins with <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> is itself encoded. Original dictionary keys are
+always retained.</p>
+<p>The destination is in the namespace active when the read command is invoked. Raw namespace separators are
+encoded, so a raw name cannot select a different namespace. Use
+<code class="docutils literal notranslate"><span class="pre">namespace</span> <span class="pre">eval</span> <span class="pre">::signals</span> <span class="pre">[list</span> <span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span> <span class="pre">-output</span> <span class="pre">vector]</span></code> to choose a namespace explicitly
+(create it first). Newly created vectors have no mapped Tcl array variable: use the returned command, for
+example <code class="docutils literal notranslate"><span class="pre">$signal</span> <span class="pre">index</span> <span class="pre">1:20</span></code>, rather than Tcl array substitution <code class="docutils literal notranslate"><span class="pre">$v(out)(1:20)</span></code>.  New vector indexes start at
+zero, including partial reads. Closing a handle does not destroy its output vectors; use <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">destroy</span></code>
+when done.</p>
+<p>This naming replaces the earlier encoding of every parenthesis and underscore. Existing vectors are not renamed.
+Use returned command names or dictionary values rather than reconstructing names using the old encoding.</p>
+</section>
+<section id="collisions-and-numeric-types">
+<span id="r-rbcbindings-collisions-and-numeric-types"></span><span id="r-3a3arbcbindingsqzcollisions20and20numeric20types"></span><h3>Collisions and numeric types<a class="headerlink" href="#collisions-and-numeric-types" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error</span></code> rejects an existing vector or command. <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code> replaces the data of an existing
+RBC vector of the same numeric type, retaining the vector identity, clients, index offset and any existing
+array mapping. It never overwrites an unrelated Tcl command. RBC vector types are immutable: a real/complex
+mismatch is an error even with <code class="docutils literal notranslate"><span class="pre">replace</span></code>; explicitly destroy the old vector first if changing type is intended.</p>
+<p>Each variable’s resolved raw storage determines its RBC type. Complex samples become complex RBC vectors without
+losing their imaginary components. Real samples (including real axes in mixed layouts) remain real vectors.
+Numeric data is decoded into buffers directly, without a full intermediate Tcl list. All selected data is read
+and all known name/type collisions are checked before publication, so read and preflight errors leave existing
+values unchanged. RBC notifications and command traces may execute application callbacks during publication;
+updates are not a transaction against reentrant application code.</p>
+</section>
+</section>
+<section id="automatic-and-explicit-output-vector-names">
+<span id="r-rbcbindings-automatic-and-explicit-output-vector-names"></span><span id="r-3a3arbcbindingsqzautomatic20and20explicit20output20vector20names"></span><h2>Automatic and explicit output vector names<a class="headerlink" href="#automatic-and-explicit-output-vector-names" title="Link to this heading">¶</a></h2>
+<p>For a single read, use <code class="docutils literal notranslate"><span class="pre">-name</span> <span class="pre">#auto</span></code> with vector output. For a bulk read, use <code class="docutils literal notranslate"><span class="pre">-names</span> <span class="pre">#auto</span></code> to allocate a
+fresh RBC vector for every selected signal:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>raw<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw<span class="w"> </span><span class="o">-</span>namespace<span class="w"> </span><span class="o">::</span>results<span class="k">]</span>
+<span class="k">set</span><span class="w"> </span>one<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)</span><span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>name<span class="w"> </span><span class="err">#</span>auto<span class="k">]</span>
+<span class="k">set</span><span class="w"> </span>waves<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vectors</span><span class="w"> </span><span class="o">-</span>all<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>names<span class="w"> </span><span class="err">#</span>auto<span class="k">]</span>
+<span class="c"># Original raw names remain dictionary keys; values are actual RBC command names.</span>
+<span class="k">set</span><span class="w"> </span>output<span class="w"> </span><span class="k">[</span><span class="nb">dict</span><span class="w"> </span>get<span class="w"> </span><span class="nv">$waves</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)]</span>
+<span class="nb">puts</span><span class="w"> </span><span class="k">[</span><span class="nv">$output</span><span class="w"> </span><span class="nv">length</span><span class="k">]</span>
+<span class="o">::</span><span class="nv">rbc</span><span class="o">::</span>vector<span class="w"> </span>destroy<span class="w"> </span><span class="nv">$one</span><span class="w"> </span><span class="k">{</span><span class="o">*</span><span class="k">}[</span><span class="nb">dict</span><span class="w"> </span>values<span class="w"> </span><span class="nv">$waves</span><span class="k">]</span>
+<span class="nv">$raw</span><span class="w"> </span><span class="nb">close</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">-names</span></code> also accepts a dictionary mapping selected raw names to destinations, for example
+<code class="docutils literal notranslate"><span class="pre">-names</span> <span class="pre">{time</span> <span class="pre">#auto</span> <span class="pre">v(out)</span> <span class="pre">saved}</span></code>. Omitted entries retain the normal signal-derived naming.
+<code class="docutils literal notranslate"><span class="pre">-name</span></code> belongs to <code class="docutils literal notranslate"><span class="pre">vector</span></code>; <code class="docutils literal notranslate"><span class="pre">-names</span></code> belongs to <code class="docutils literal notranslate"><span class="pre">vectors</span></code>. Both require vector output and may precede or
+follow the selection. They are per-read options, not <code class="docutils literal notranslate"><span class="pre">openraw</span></code> defaults.  Unknown or unselected keys, duplicate
+selections/destinations, and empty destinations are errors.</p>
+<p>Relative destinations, including <code class="docutils literal notranslate"><span class="pre">#auto</span></code>, use the handle’s <code class="docutils literal notranslate"><span class="pre">-namespace</span></code>, or the read caller’s namespace when
+none was specified. An absolute destination overrides this location; its parent namespace must exist. RBC
+itself expands a final <code class="docutils literal notranslate"><span class="pre">#auto</span></code> component in the selected namespace: the reader does not generate names or
+counters. <code class="docutils literal notranslate"><span class="pre">auto</span></code> without <code class="docutils literal notranslate"><span class="pre">#</span></code> is an ordinary explicit name.  Repeated automatic reads create distinct vectors
+even with <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code>; explicit names retain the existing collision/type policy. Real and complex
+output, empty ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle
+and are owned by the caller. If publication fails, vectors created by that read are removed.</p>
+<hr class="docutils" />
+<p class="centered">
+<strong>Copyright (c) George Yashin</strong></p></section>
+</section>
+
+
+            <div class="clearer"></div>
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="Main">
+        <div class="sphinxsidebarwrapper">
+  <div>
+    <h3><a href="index.html">Table of Contents</a></h3>
+    <ul>
+<li><a class="reference internal" href="#">RBC vectors support</a><ul>
+<li><a class="reference internal" href="#optional-rbc-vector-output">Optional RBC vector output</a><ul>
+<li><a class="reference internal" href="#destination-names-and-ownership">Destination names and ownership</a></li>
+<li><a class="reference internal" href="#collisions-and-numeric-types">Collisions and numeric types</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#automatic-and-explicit-output-vector-names">Automatic and explicit output vector names</a></li>
+</ul>
+</li>
+</ul>
+
+  </div>
+  <div>
+    <h4>Previous topic</h4>
+    <p class="topless"><a href="tclsimrawreader.html"
+                          title="previous chapter">tclsimrawreader - read SPICE .raw files with Tcl</a></p>
+  </div>
+  <div>
+    <h4>Next topic</h4>
+    <p class="topless"><a href="tclsimrawreader-tclsimrawreader.html"
+                          title="next chapter">::tclsimrawreader</a></p>
+  </div>
+  <div role="note" aria-label="source link">
+    <h3>This Page</h3>
+    <ul class="this-page-menu">
+      <li><a href="_sources/tclsimrawreader-rbcBindings.rst.txt"
+            rel="nofollow">Show Source</a></li>
+    </ul>
+   </div>
+<search id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</search>
+<script>document.getElementById('searchbox').style.display = "block"</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related" role="navigation" aria-label="Related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="tclsimrawreader-tclsimrawreader.html" title="::tclsimrawreader"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="tclsimrawreader.html" title="tclsimrawreader - read SPICE .raw files with Tcl"
+             >previous</a> |</li>
+        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
+        <li class="nav-item nav-item-this"><a href="">RBC vectors support</a></li> 
+      </ul>
+    </div>
+    <div class="footer" role="contentinfo">
+    &#169; Copyright George Yashin.
+      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
+    </div>
+  </body>
+</html>

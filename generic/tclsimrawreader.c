@@ -4638,6 +4638,10 @@ static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj 
             Tcl_SetObjResult(interp, Tcl_ObjPrintf("bad -output value \"%s\": must be list or vector", value));
             return TCL_ERROR;
         }
+    } else if (strcmp(option, "-name") == 0) {
+        output->name = valueObj;
+    } else if (strcmp(option, "-names") == 0) {
+        output->names = valueObj;
     } else {
         if (strcmp(value, "error") == 0) {
             output->replace = 0;
@@ -4762,6 +4766,44 @@ static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const ob
     return TCL_OK;
 }
 
+/* Validate per-read naming independently of RBC availability and before publication. */
+static int RawValidateNames(Tcl_Interp *interp, RawOutputOptions *output, int dictionary, RawPlot *plot, Tcl_Size n,
+                            Tcl_Size *indexes) {
+    if (!output->name && !output->names) {
+        return TCL_OK;
+    }        
+    if (!output->vectors || (dictionary ? output->name != NULL : output->names != NULL)) {
+        Tcl_SetObjResult(
+            interp,
+            Tcl_NewStringObj("use -name with vector, or -names with vectors; naming requires -output vector", -1));
+        return TCL_ERROR;
+    }
+    if (output->names && strcmp(Tcl_GetString(output->names), "#auto") != 0) {
+        Tcl_DictSearch search;
+        Tcl_Obj *key, *value;
+        int done;
+        if (Tcl_DictObjFirst(interp, output->names, &search, &key, &value, &done) != TCL_OK) {
+            return TCL_ERROR;
+        }            
+        for (; !done; Tcl_DictObjNext(&search, &key, &value, &done)) {
+            Tcl_Size i;
+            for (i = 0; i < n; i++) {
+                if (strcmp(Tcl_GetString(key), plot->header.variables[indexes[i]].name) == 0) {
+                    break;
+                }                    
+            }
+            if (i == n) {
+                Tcl_SetObjResult(interp,
+                                 Tcl_ObjPrintf("unknown or unselected vector in -names: %s", Tcl_GetString(key)));
+                Tcl_DictObjDone(&search);
+                return TCL_ERROR;
+            }
+        }
+        Tcl_DictObjDone(&search);
+    }
+    return TCL_OK;
+}
+
 //***  RawParsePlotIndex function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -4852,7 +4894,8 @@ static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_O
             return TCL_ERROR;
         }
         opt = Tcl_GetString(objv[i]);
-        if (strcmp(opt, "-output") == 0 || strcmp(opt, "-ifexists") == 0) {
+        if (strcmp(opt, "-output") == 0 || strcmp(opt, "-ifexists") == 0 || strcmp(opt, "-name") == 0 ||
+            strcmp(opt, "-names") == 0) {
             if (RawParseOutputOption(interp, opt, objv[i + 1], output) != TCL_OK) {
                 return TCL_ERROR;
             }
@@ -4973,7 +5016,8 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars, Tcl_Size *varIndexes,
-                                 Tcl_Size firstPoint, Tcl_Size count, int replace, int dictionary, Tcl_Obj **objPtr) {
+                                 Tcl_Size firstPoint, Tcl_Size count, RawOutputOptions *output, int dictionary, Tcl_Obj **objPtr) {
+    int replace = output->replace;
     RawHeader *h = &plot->header;
     RawNumericColumn *columns = NULL, *allColumns = NULL;
     Tcl_Obj **names = NULL;
@@ -5002,19 +5046,41 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     for (Tcl_Size i = 0; i < numVars; i++) {
         RawVariable *variable = &h->variables[varIndexes[i]];
         Tcl_Size components = variable->storage == RAW_VALUE_COMPLEX128 ? 2 : 1;
-        names[i] = RawRbcName(rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
-                                                  : Tcl_GetCurrentNamespace(interp)->fullName,
-                              variable->name);
+        const char *ns = rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
+                                              : Tcl_GetCurrentNamespace(interp)->fullName;
+        Tcl_Obj *dest = output->name;
+        if (output->names) {
+            if (strcmp(Tcl_GetString(output->names), "#auto") == 0) {
+                dest = output->names;
+            } else {
+                Tcl_Obj *key = Tcl_NewStringObj(variable->name, -1);
+                Tcl_IncrRefCount(key);
+                int code = Tcl_DictObjGet(interp, output->names, key, &dest);
+                Tcl_DecrRefCount(key);
+                if (code != TCL_OK) goto done;
+            }
+        }
+        if (dest && Tcl_GetCharLength(dest) == 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("empty destination vector name", -1));
+            goto done;
+        }
+        names[i] = dest ? (strncmp(Tcl_GetString(dest), "::", 2) == 0 ? Tcl_DuplicateObj(dest)
+                            : Tcl_ObjPrintf("%s%s%s", ns, strcmp(ns, "::") == 0 ? "" : "::", Tcl_GetString(dest)))
+                        : RawRbcName(ns, variable->name);
         Tcl_IncrRefCount(names[i]);
         for (Tcl_Size j = 0; j < i; j++) {
-            if (strcmp(Tcl_GetString(names[i]), Tcl_GetString(names[j])) == 0) {
+            if (varIndexes[i] == varIndexes[j]) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("duplicate selected vector", -1));
+                goto done;
+            }
+            if (!RawRbcAutoName(names[i]) && strcmp(Tcl_GetString(names[i]), Tcl_GetString(names[j])) == 0) {
                 Tcl_SetObjResult(interp, Tcl_ObjPrintf("duplicate vector destination \"%s\"", Tcl_GetString(names[i])));
                 goto done;
             }
         }
         columns[i].complex = components == 2;
         columns[i].count = count;
-        if (RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
             goto done;
         }
         if (count > TCL_SIZE_MAX / components || (size_t)count > SIZE_MAX / sizeof(double) / (size_t)components) {
@@ -5281,7 +5347,8 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
         plot = &rf->plots[0];
         while (next < objc) {
             const char *option = Tcl_GetString(objv[next]);
-            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0) {
+            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
+                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0) {
                 break;
             }
             if (next + 1 >= objc) {
@@ -5320,8 +5387,12 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
             }
             return TCL_ERROR;
         }
+        if (RawValidateNames(interp, &output, 1, plot, numVars, varIndexes) != TCL_OK) {
+            if (varIndexes) Tcl_Free((char *)varIndexes);
+            return TCL_ERROR;
+        }
         if (output.vectors) {
-            r = RawPlotReadRbcVectors(interp, rf, plot, numVars, varIndexes, firstPoint, count, output.replace, 1,
+            r = RawPlotReadRbcVectors(interp, rf, plot, numVars, varIndexes, firstPoint, count, &output, 1,
                                       &dictObj);
         } else {
             r = RawPlotReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count,
@@ -5349,7 +5420,8 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
         plot = &rf->plots[0];
         while (next < objc) {
             const char *option = Tcl_GetString(objv[next]);
-            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0) {
+            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
+                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0) {
                 break;
             }
             if (next + 1 >= objc) {
@@ -5379,8 +5451,9 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
         if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count, &output) != TCL_OK) {
             return TCL_ERROR;
         }
+        if (RawValidateNames(interp, &output, 0, plot, 1, &varIndex) != TCL_OK) return TCL_ERROR;
         int result = output.vectors ? RawPlotReadRbcVectors(interp, rf, plot, 1, &varIndex, firstPoint, count,
-                                                            output.replace, 0, &vecObj)
+                                                            &output, 0, &vecObj)
                                     : RawPlotVectorToObj(interp, rf, plot, varIndex, firstPoint, count, &vecObj);
         if (result != TCL_OK) {
             return TCL_ERROR;
@@ -5449,7 +5522,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     Tcl_Obj *fileNameObj;
     const char *name;
     RawDialect dialect;
-    RawOutputOptions output = {0, 0};
+    RawOutputOptions output = {0};
     Tcl_Obj *namespaceOption = NULL;
     if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output, &namespaceOption) != TCL_OK) {
         return TCL_ERROR;

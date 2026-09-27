@@ -97,6 +97,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
         #   integer
         #  -output mode - override the handle output for this call: `list` or `vector`
+        #  -name destination - explicit output name or `#auto` for a fresh RBC-generated name; vector output only
         #  -ifexists policy - override collision handling for this call: `error` or `replace`
         # In vector mode, safe literal names (including `v(out)` and `v(1)`) are preserved and qualified in the
         # handle namespace, if configured, or the calling namespace otherwise. Unsupported/namespace-bearing names and names beginning with the reserved `_raw_`
@@ -114,7 +115,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vector ID(M1) -count 16
         # $rawfile vector ID(M1)
         #```
-        # Synopsis: ?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?
+        # Synopsis: ?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?
     }
 
     proc vectors {args} {
@@ -126,6 +127,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
         #   integer
         #  -output mode - override the handle output for this call: `list` or `vector`
+        #  -names destinations - `#auto` for all selected signals, or a raw-name-to-destination dictionary; vector output only
         #  -ifexists policy - override collision handling for this call: `error` or `replace`
         # Options do not change the handle defaults. Vector naming, types, collision handling and ownership follow
         # the single-vector command. All selected data is decoded before any destination data is replaced.
@@ -140,7 +142,7 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vectors {ID(M1) V(VD)}
         # $rawfile vectors -plot 2 -all 
         #```
-        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?
+        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?
     }
 
     proc close {} {

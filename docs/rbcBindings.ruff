@@ -1,0 +1,131 @@
+namespace eval rbcBindings {
+    variable _ruff_ns_opts {
+        -heading {RBC vectors support}
+    }
+    variable _ruff_preamble {
+        ## Optional RBC vector output
+
+        The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency. To enable
+        real and complex [rbc-tk9](https://github.com/georgtree/rbc-tk9) output, use Tcl 9 and matching RBC 0.8.0
+        headers:
+
+        ```sh
+        ./configure --with-tcl=/path/to/tcl/lib --with-rbc=/path/to/rbc-tk9
+        make clean
+        make
+        ```
+
+        `--with-rbc` accepts a source tree, installation prefix, or directory containing `rbcVector.h`, `rbcDecls.h` and
+        `rbcStubLib.c`, just as in tclmeasure. The portable stub client is compiled into this package; the RBC shared
+        library is not linked. `--without-rbc` selects the default list-only build. Even an enabled build can load and
+        read lists without RBC installed. `rbc::vector` is required only when vector output is selected. No Tk
+        initialization is needed, although the installed RBC binary must have its system library dependencies available.
+
+        Use an RBC build with literal parenthesized vector names (`vector create -literal true`) and namespace-safe
+        vector command deletion. The package version remains `rbc::vector 0.8.0`, so an older build with the same
+        version number is insufficient. This upgrade does not change the RBC stubs ABI or the optional `--with-rbc`
+        configuration.
+
+        Set handle defaults with `-output list|vector` and `-ifexists error|replace`. Defaults are `list` and `error`.
+        Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
+
+        ```tcl
+        set raw [::tclsimrawreader::openraw file.raw -output vector -ifexists error -namespace ::wave]
+        set signal [$raw vector v(out)]
+        # -> ::wave::v(out)
+        set values [$signal index :]
+        set commands [$raw vectors {time v(out)} -ifexists replace]
+        # -> time ::wave::time v(out) ::wave::v(out)
+        set values [$raw vector v(out) -output list]
+        $raw close
+        # Created vectors remain alive and are owned by the caller.
+        ```
+
+        For `openraw`, options may precede or follow the file name. For read commands, `-output` and `-ifexists` may
+        precede or follow the selection; `-plot` precedes it as before. Existing `-from`, `-count`, selected-name
+        lists, `-all`, dialects and multi-plot handling work in both output modes. In vector mode, `vector` returns one
+        fully qualified command name; `vectors` returns a dictionary whose original raw-name keys map to fully
+        qualified command names.  An empty selection returns an empty dictionary. A zero-length range creates an empty
+        vector.
+
+        An explicit `openraw -namespace name` selects a fixed destination for all vector reads. Relative names resolve
+        against the opening caller; missing namespaces and parents are created at open time. The qualified name is
+        retained for reads from other namespaces. Without this option, destinations use the read caller as before.
+        Empty namespace names are rejected. This option also works with list defaults and later `-output vector`
+        overrides. Closing the handle deletes neither the namespace nor its caller-owned output vectors.
+
+        ### Destination names and ownership
+        Raw names are preserved whenever they are safe literal RBC names. Balanced parentheses, underscores, periods,
+        letters, digits, `@` and single interior colons are retained. Vectors are created with `-literal true`, so
+        numeric names such as `v(1)` or `v(1)(2:4)` are never interpreted as length/range specifications. Examples:
+
+        | Raw name | Destination tail |
+        | --- | --- |
+        | `time` | `time` |
+        | `v(out)` | `v(out)` |
+        | `v(1)` | `v(1)` |
+        | `v_28out_29` | `v_28out_29` |
+        | `L2:flux` | `L2:flux` |
+        | `v(a-b)` | `_raw_7628612D6229` |
+        | `sub::node` | `_raw_7375623A3A6E6F6465` |
+
+        Names with unsupported characters, unbalanced parentheses, `::`, a leading/trailing colon, or the reserved
+        prefix `_raw_` use a fallback: `_raw_` followed by the uppercase hexadecimal UTF-8 bytes of the complete
+        original name.  The empty name maps to `_raw_`. Reserving this prefix keeps fallback names distinct from
+        literal names; a raw name that already begins with `_raw_` is itself encoded. Original dictionary keys are
+        always retained.
+
+        The destination is in the namespace active when the read command is invoked. Raw namespace separators are
+        encoded, so a raw name cannot select a different namespace. Use
+        `namespace eval ::signals [list $raw vectors -all -output vector]` to choose a namespace explicitly
+        (create it first). Newly created vectors have no mapped Tcl array variable: use the returned command, for
+        example `$signal index 1:20`, rather than Tcl array substitution `$v(out)(1:20)`.  New vector indexes start at
+        zero, including partial reads. Closing a handle does not destroy its output vectors; use `rbc::vector destroy`
+        when done.
+
+        This naming replaces the earlier encoding of every parenthesis and underscore. Existing vectors are not renamed.
+        Use returned command names or dictionary values rather than reconstructing names using the old encoding.
+
+        ### Collisions and numeric types
+        `-ifexists error` rejects an existing vector or command. `-ifexists replace` replaces the data of an existing
+        RBC vector of the same numeric type, retaining the vector identity, clients, index offset and any existing
+        array mapping. It never overwrites an unrelated Tcl command. RBC vector types are immutable: a real/complex
+        mismatch is an error even with `replace`; explicitly destroy the old vector first if changing type is intended.
+
+        Each variable's resolved raw storage determines its RBC type. Complex samples become complex RBC vectors without
+        losing their imaginary components. Real samples (including real axes in mixed layouts) remain real vectors.
+        Numeric data is decoded into buffers directly, without a full intermediate Tcl list. All selected data is read
+        and all known name/type collisions are checked before publication, so read and preflight errors leave existing
+        values unchanged. RBC notifications and command traces may execute application callbacks during publication;
+        updates are not a transaction against reentrant application code.
+
+        ## Automatic and explicit output vector names
+        For a single read, use `-name #auto` with vector output. For a bulk read, use `-names #auto` to allocate a
+        fresh RBC vector for every selected signal:
+
+        ```tcl
+        set raw [::tclsimrawreader::openraw file.raw -namespace ::results]
+        set one [$raw vector v(out) -output vector -name #auto]
+        set waves [$raw vectors -all -output vector -names #auto]
+        # Original raw names remain dictionary keys; values are actual RBC command names.
+        set output [dict get $waves v(out)]
+        puts [$output length]
+        ::rbc::vector destroy $one {*}[dict values $waves]
+        $raw close
+        ```
+
+        `-names` also accepts a dictionary mapping selected raw names to destinations, for example
+        `-names {time #auto v(out) saved}`. Omitted entries retain the normal signal-derived naming. 
+        `-name` belongs to `vector`; `-names` belongs to `vectors`. Both require vector output and may precede or
+        follow the selection. They are per-read options, not `openraw` defaults.  Unknown or unselected keys, duplicate
+        selections/destinations, and empty destinations are errors.
+
+        Relative destinations, including `#auto`, use the handle's `-namespace`, or the read caller's namespace when
+        none was specified. An absolute destination overrides this location; its parent namespace must exist. RBC
+        itself expands a final `#auto` component in the selected namespace: the reader does not generate names or
+        counters. `auto` without `#` is an ordinary explicit name.  Repeated automatic reads create distinct vectors
+        even with `-ifexists replace`; explicit names retain the existing collision/type policy. Real and complex
+        output, empty ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle
+        and are owned by the caller. If publication fails, vectors created by that read are removed.
+    }
+}

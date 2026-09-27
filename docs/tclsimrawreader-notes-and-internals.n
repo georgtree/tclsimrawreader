@@ -1150,4 +1150,6 @@ tclsimrawreader-notes-and-internals(n) - information about implementation
 .sp 1
 Public commands documentation:
 .br
+tclsimrawreader-rbcbindings(n)
+.br
 tclsimrawreader-tclsimrawreader(n)

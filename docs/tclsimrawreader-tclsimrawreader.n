@@ -17,9 +17,9 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .br
 \fBRAWFILE plots\fP
 .br
-\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?\fP
 .br
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?\fP
 .br
 .SH ::TCLSIMRAWREADER
 .SH COMMANDS
@@ -305,7 +305,7 @@ Returns the values of specified vector (variable) for selected plot, in certain 
 index is not provided, return values from the first plot\&.
 list of values in list mode, or fully qualified RBC vector command name in vector mode
 .RS 4n
-\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?\fP
 .br
 .RE
 .PP
@@ -320,6 +320,9 @@ Number of the values from the start of the vector, optional, integer\&.
 .TP
 -ifexists policy
 Override collision handling for this call: error or replace
+.TP
+-name destination
+Explicit output name or #auto for a fresh RBC-generated name; vector output only\&.
 .TP
 -output mode
 Override the handle output for this call: list or vector
@@ -366,7 +369,7 @@ Returns the values of specified vectors (variables) for selected plot (or all ve
 if specified\&. If plot index is not provided, return values from the first plot\&.
 dictionary of original raw names to value lists, or to fully qualified RBC command names
 .RS 4n
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?\fP
 .br
 .RE
 .PP
@@ -384,6 +387,9 @@ Number of the values from the start of the vector, optional, integer\&.
 .TP
 -ifexists policy
 Override collision handling for this call: error or replace
+.TP
+-names destinations
+#auto for all selected signals, or a raw-name-to-destination dictionary; vector output only\&.
 .TP
 -output mode
 Override the handle output for this call: list or vector
@@ -424,5 +430,7 @@ tclsimrawreader-notes-and-internals(n) - information about implementation
 .br
 .sp 1
 Public commands documentation:
+.br
+tclsimrawreader-rbcbindings(n)
 .br
 tclsimrawreader-tclsimrawreader(n)

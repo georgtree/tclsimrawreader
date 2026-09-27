@@ -37,6 +37,7 @@ typedef enum RawVectorResultMode { RAW_VECTOR_RESULT_LIST, RAW_VECTOR_RESULT_DIC
 typedef struct RawOutputOptions {
     int vectors; /* Zero returns lists; nonzero publishes RBC vectors. */
     int replace; /* Zero rejects collisions; nonzero replaces same-type RBC data. */
+    Tcl_Obj *name, *names; /* Borrowed per-read destination options; never stored on a handle. */
 } RawOutputOptions;
 
 typedef struct RawNumericColumn {
@@ -46,6 +47,7 @@ typedef struct RawNumericColumn {
     int complex;
 } RawNumericColumn;
 
+int RawRbcAutoName(Tcl_Obj *name);
 int RawRbcInit(Tcl_Interp *interp);
 int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNumericColumn *columns, int replace,
                   int dictionary, Tcl_Obj **resultPtr);

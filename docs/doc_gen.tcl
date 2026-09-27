@@ -4,6 +4,7 @@ package require fileutil
 set docDir [file dirname [file normalize [info script]]]
 set sourceDir [file join $docDir ..]
 source [file join $docDir startPage.ruff]
+source [file join $docDir rbcBindings.ruff]
 source [file join $docDir notesAndInternals.ruff]
 source [file join $docDir tclsimrawreader.ruff]
 
@@ -20,7 +21,7 @@ set commonNroff [list -title $title -sortnamespaces false -preamble $startPage -
                          -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                          -copyright "George Yashin" {*}$::argv]
 
-set namespaces [list ::tclsimrawreader {::Notes and internals}]
+set namespaces [list rbcBindings ::tclsimrawreader {::Notes and internals}]
 
 ruff::document $namespaces -format sphinx -outfile tclsimrawreader.rst -outdir [file join $docDir sphinx]\
         {*}$commonSphinx

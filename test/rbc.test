@@ -359,6 +359,82 @@ Values:
         set message
     } -cleanup {catch {$r close}} -result {command "::time" already exists and is not an RBC vector}
 
+
+    test rawAuto-1 {fresh names, original keys, namespace, values and caller ownership} -body {
+        set r [::tclsimrawreader::openraw $dcPath -namespace ::rawVectorTests::automatic]
+        set expected [$r vectors -all]
+        set a [$r vectors -all -output vector -names #auto]
+        set b [$r vectors -names #auto -output vector -all -ifexists replace]
+        set ok [expr {[dict keys $a] eq [dict keys $expected]}]
+        dict for {key name} $a {
+            set ok [expr {$ok && [namespace qualifiers $name] eq "::rawVectorTests::automatic"
+                         && [string match vector* [namespace tail $name]]
+                         && $name ne [dict get $b $key] && [$name index :] eq [dict get $expected $key]
+                         && [$name variable] eq {}}]
+        }
+        $r close
+        list $ok [llength [info commands [dict get $a v(out)]]]
+    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::automatic} -result {1 1}
+
+    test rawAuto-2 {single, explicit auto spelling, caller namespace and empty range} -body {
+        set r [::tclsimrawreader::openraw $dcPath]
+        namespace eval ::rawVectorTests::caller {}
+        set v [namespace eval ::rawVectorTests::caller [list $r vector v(out) -output vector -name #auto -count 0]]
+        set literal [namespace eval ::rawVectorTests::caller [list $r vector v(out) -output vector -name auto]]
+        list [namespace qualifiers $v] [$v length] $literal
+    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::caller} -result {::rawVectorTests::caller 0 ::rawVectorTests::caller::auto}
+
+    test rawAuto-3 {mixed dictionary naming preserves unspecified names and real/complex values} -body {
+        set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw] -namespace ::rawVectorTests::mixed]
+        set expected [$r vectors -all]
+        set keys [dict keys $expected]
+        set selected [lrange $keys 0 1]
+        set d [$r vectors $selected -output vector -names [dict create [lindex $keys 0] #auto [lindex $keys 1] saved]]
+        set ok 1
+        dict for {key v} $d {if {[$v index :] ne [dict get $expected $key]} {set ok 0}}
+        list $ok [dict get $d [lindex $keys 1]] [[dict get $d [lindex $keys 1]] type]
+    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::mixed} -result {1 ::rawVectorTests::mixed::saved complex}
+
+    test rawAuto-4 {invalid naming is rejected before vector creation} -body {
+        set r [::tclsimrawreader::openraw $dcPath -namespace ::rawVectorTests::bad]
+        set errors {}
+        foreach args {
+            {vectors -all -names #auto}
+            {vector v(out) -output vector -names #auto}
+            {vectors -all -output vector -name #auto}
+            {vectors -all -output vector -names {missing #auto}}
+            {vectors {v(out) v(out)} -output vector -names #auto}
+            {vectors -all -output vector -names {v(out) {}}}
+            {vectors -all -output vector -names malformed}
+        } {lappend errors [catch {$r {*}$args}]}
+        list $errors [info commands ::rawVectorTests::bad::*]
+    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::bad} -result {{1 1 1 1 1 1 1} {}}
+
+    test rawAuto-5 {nested namespace is preserved in returned command names} -body {
+        set r [::tclsimrawreader::openraw $dcPath -namespace {::rawVectorTests::nested::child}]
+        set v [$r vector v(out) -output vector -name #auto]
+        list [namespace qualifiers $v] [expr {[$v index :] eq [$r vector v(out)]}]
+    } -cleanup {catch {$r close}; namespace delete {::rawVectorTests::nested::child}} -result {::rawVectorTests::nested::child 1}
+
+    test rawAuto-6 {a later creation failure rolls back automatically created vectors} -body {
+        set r [::tclsimrawreader::openraw $dcPath -namespace ::rawVectorTests::rollback]
+        set keys [lrange [$r names] 0 1]
+        set code [catch {$r vectors $keys -output vector -names [dict create [lindex $keys 0] #auto [lindex $keys 1] ::missingAutoNamespace::saved]}]
+        list $code [info commands ::rawVectorTests::rollback::*]
+    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::rollback} -result {1 {}}
+
+
+    test rawAuto-7 {absolute auto overrides handle namespace; partial maps retain default names} -body {
+        set r [::tclsimrawreader::openraw $dcPath -output vector -namespace ::rawVectorTests::default]
+        namespace eval ::rawVectorTests::other {}
+        set v [$r vector v(out) -name ::rawVectorTests::other::#auto]
+        set d [$r vectors -all -names {v(out) #auto}]
+        list [namespace qualifiers $v] [dict get $d v(in)] [namespace qualifiers [dict get $d v(out)]]
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::default ::rawVectorTests::other
+    } -result {::rawVectorTests::other ::rawVectorTests::default::v(in) ::rawVectorTests::default}
+
     namespace delete ::rawVectorTests
 } else {
     test rawOutput-unavailable {vector requests fail clearly without changing list behavior} -body {

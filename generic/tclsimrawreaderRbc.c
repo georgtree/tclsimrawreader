@@ -7,6 +7,13 @@
 #include <rbcStubLib.c>
 #endif
 
+/* RBC recognizes #auto as the final component of a qualified vector name. */
+int RawRbcAutoName(Tcl_Obj *name) {
+    const char *s = Tcl_GetString(name);
+    size_t n = strlen(s);
+    return strcmp(s, "#auto") == 0 || (n >= 7 && strcmp(s + n - 7, "::#auto") == 0);
+}
+
 //***  RawRbcInit function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -138,7 +145,8 @@ int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *nameObj, int complex, int replace) 
  * buffers are packed into RBC's public Rbc_Complex representation.
  *
  * Parameters:
- *      numVars/names/columns - Selected columns and referenced, fully qualified destination name objects.
+ *      numVars/names/columns - Selected columns and referenced, fully qualified destination requests. A final
+ *                              #auto component is expanded by RBC; names are replaced with actual owned names.
  *      replace               - Permit same-type replacement; otherwise reject any existing destination.
  *      dictionary            - Return a list of names for the caller to assemble into a dictionary, or one name.
  *      resultPtr             - Receives a new Tcl result object on success.
@@ -159,7 +167,7 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
     memset(packed, 0, (size_t)numVars * sizeof(*packed));
     memset(created, 0, (size_t)numVars * sizeof(*created));
     for (Tcl_Size i = 0; i < numVars; i++) {
-        if (RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
             goto done;
         }
         if (columns[i].complex) {
@@ -182,10 +190,10 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
     }
     for (Tcl_Size i = 0; i < numVars; i++) {
         const char *name = Tcl_GetString(names[i]);
-        if (RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
             goto done;
         }
-        if (!Rbc_VectorExists2(interp, name)) {
+        if (RawRbcAutoName(names[i]) || !Rbc_VectorExists2(interp, name)) {
             Tcl_Obj *args[9] = {Tcl_NewStringObj("::rbc::vector", -1),
                                 Tcl_NewStringObj("create", -1),
                                 names[i],
@@ -205,9 +213,23 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
             if (code != TCL_OK) {
                 goto done;
             }
+            /* RBC returns the fully qualified command name, not a list. */
+            Tcl_Obj *actual = Tcl_GetObjResult(interp);
+            Tcl_IncrRefCount(actual);
+            Tcl_DecrRefCount(names[i]);
+            names[i] = actual;
+            name = Tcl_GetString(actual);
             created[i] = Tcl_FindCommand(interp, name, NULL, TCL_GLOBAL_ONLY);
             if (created[i] == NULL || !Rbc_VectorExists2(interp, name)) {
                 Tcl_SetObjResult(interp, Tcl_ObjPrintf("RBC did not create vector \"%s\"", name));
+                goto done;
+            }
+        }
+    }
+    for (Tcl_Size i = 0; i < numVars; i++) {
+        for (Tcl_Size j = 0; j < i; j++) {
+            if (strcmp(Tcl_GetString(names[i]), Tcl_GetString(names[j])) == 0) {
+                Tcl_SetObjResult(interp, Tcl_NewStringObj("duplicate resolved vector destination", -1));
                 goto done;
             }
         }
