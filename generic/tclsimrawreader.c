@@ -5080,7 +5080,7 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
         }
         columns[i].complex = components == 2;
         columns[i].count = count;
-        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace, 1) != TCL_OK) {
             goto done;
         }
         if (count > TCL_SIZE_MAX / components || (size_t)count > SIZE_MAX / sizeof(double) / (size_t)components) {

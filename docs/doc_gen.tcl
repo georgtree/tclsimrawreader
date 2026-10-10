@@ -1,4 +1,5 @@
 package require ruff
+package require tclsimrawreader
 package require fileutil
 
 set docDir [file dirname [file normalize [info script]]]
@@ -8,8 +9,10 @@ source [file join $docDir rbcBindings.ruff]
 source [file join $docDir notesAndInternals.ruff]
 source [file join $docDir tclsimrawreader.ruff]
 
-set packageVersion [package versions tclsimrawreader]
-puts $packageVersion
+set packageVersion [package provide tclsimrawreader]
+if {$packageVersion eq {}} {
+    return -code error "Package version is empty"
+}
 set title "Tcl NgspiceTclBridge package"
 
 set commonSphinx [list -title $title -sortnamespaces false -preamble $startPage -pagesplit namespace -recurse false\
@@ -38,6 +41,14 @@ class MyTclLexer(TclLexer):
     def get_tokens_unprocessed(self, text):
         for i, t, v in super().get_tokens_unprocessed(text):
             if v == "=":
+                yield i, Operator, v   # or Name.Builtin
+            elif v == "$":
+                yield i, Operator, v   # or Name.Builtin
+            elif v == "\\":
+                yield i, Operator, v   # or Name.Builtin
+            elif v == "%":
+                yield i, Operator, v   # or Name.Builtin
+            elif v == "'":
                 yield i, Operator, v   # or Name.Builtin
             else:
                 yield i, t, v

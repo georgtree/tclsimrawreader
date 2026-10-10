@@ -3,6 +3,9 @@
 #ifdef HAVE_RBC
 #include <rbcVector.h>
 #include <rbcDecls.h>
+#ifndef Rbc_VectorCheckWritable
+#error "RBC 0.8.1 or newer stubs headers are required"
+#endif
 /* Compile the portable stub client installed with the RBC public headers. */
 #include <rbcStubLib.c>
 #endif
@@ -28,7 +31,7 @@ int RawRbcAutoName(Tcl_Obj *name) {
  */
 int RawRbcInit(Tcl_Interp *interp) {
 #ifdef HAVE_RBC
-    if (Rbc_VectorInitStubs(interp, "0.5.0", 0) == NULL) {
+    if (Rbc_VectorInitStubs(interp, "0.8.1", 0) == NULL) {
         if (Tcl_GetStringResult(interp)[0] == '\0') {
             Tcl_SetObjResult(interp, Tcl_NewStringObj("RBC vector stubs are unavailable", -1));
         }
@@ -96,11 +99,12 @@ Tcl_Obj *RawRbcName(const char *ns, const char *rawName) {
  *
  *      Checks one fully qualified destination without changing it. Replacement updates only an existing RBC vector
  *      of the same numeric type, preserving its clients and mapping. Unrelated commands and renamed/aliased vector
- *      commands are rejected. Returns TCL_OK or TCL_ERROR with a collision/type diagnostic. Requires initialized stubs.
+ *      commands are rejected. With writable set, read-only destinations are rejected before any publication.
+ *      Returns TCL_OK or TCL_ERROR with a collision/type/read-only diagnostic. Requires initialized stubs.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *nameObj, int complex, int replace) {
+int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *nameObj, int complex, int replace, int writable) {
 #ifdef HAVE_RBC
     const char *name = Tcl_GetString(nameObj);
     Tcl_CmdInfo info;
@@ -121,6 +125,9 @@ int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *nameObj, int complex, int replace) 
         }
         if (Rbc_VectorGetType(vector) != (complex ? RBC_VECTOR_COMPLEX : RBC_VECTOR_REAL)) {
             Tcl_SetObjResult(interp, Tcl_ObjPrintf("vector \"%s\" has a different numeric type", name));
+            return TCL_ERROR;
+        }
+        if (writable && Rbc_VectorCheckWritable(interp, vector) != TCL_OK) {
             return TCL_ERROR;
         }
     } else if (commandExists) {
@@ -167,7 +174,7 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
     memset(packed, 0, (size_t)numVars * sizeof(*packed));
     memset(created, 0, (size_t)numVars * sizeof(*created));
     for (Tcl_Size i = 0; i < numVars; i++) {
-        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace, 1) != TCL_OK) {
             goto done;
         }
         if (columns[i].complex) {
@@ -190,7 +197,7 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
     }
     for (Tcl_Size i = 0; i < numVars; i++) {
         const char *name = Tcl_GetString(names[i]);
-        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace) != TCL_OK) {
+        if (!RawRbcAutoName(names[i]) && RawRbcCheck(interp, names[i], columns[i].complex, replace, 1) != TCL_OK) {
             goto done;
         }
         if (RawRbcAutoName(names[i]) || !Rbc_VectorExists2(interp, name)) {
@@ -237,7 +244,7 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
     for (Tcl_Size i = 0; i < numVars; i++) {
         Rbc_Vector *vector;
         /* A creation trace or previous vector's notification may have changed a later destination. */
-        if (RawRbcCheck(interp, names[i], columns[i].complex, 1) != TCL_OK ||
+        if (RawRbcCheck(interp, names[i], columns[i].complex, 1, 1) != TCL_OK ||
             Rbc_GetVector(interp, Tcl_GetString(names[i]), &vector) != TCL_OK) {
             goto done;
         }
@@ -259,7 +266,7 @@ int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNume
                              Tcl_ObjPrintf("vector \"%s\" was removed during publication", Tcl_GetString(names[i])));
             goto done;
         }
-        if (RawRbcCheck(interp, names[i], columns[i].complex, 1) != TCL_OK) {
+        if (RawRbcCheck(interp, names[i], columns[i].complex, 1, 0) != TCL_OK) {
             goto done;
         }
     }

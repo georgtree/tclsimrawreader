@@ -52,7 +52,7 @@ int RawRbcInit(Tcl_Interp *interp);
 int RawRbcPublish(Tcl_Interp *interp, Tcl_Size numVars, Tcl_Obj **names, RawNumericColumn *columns, int replace,
                   int dictionary, Tcl_Obj **resultPtr);
 Tcl_Obj *RawRbcName(const char *ns, const char *rawName);
-int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *name, int complex, int replace);
+int RawRbcCheck(Tcl_Interp *interp, Tcl_Obj *name, int complex, int replace, int writable);
 
 typedef enum RawDialect { RAW_DIALECT_GENERIC, RAW_DIALECT_LTSPICE } RawDialect;
 

@@ -45,8 +45,8 @@
 <section id="optional-rbc-vector-output">
 <span id="r-rbcbindings-optional-rbc-vector-output"></span><span id="r-3a3arbcbindingsqzoptional20rbc20vector20output"></span><h2>Optional RBC vector output<a class="headerlink" href="#optional-rbc-vector-output" title="Link to this heading">¶</a></h2>
 <p>The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency. To enable
-real and complex <a class="reference external" href="https://github.com/georgtree/rbc-tk9">rbc-tk9</a> output, use Tcl 9 and matching RBC 0.8.0
-headers:</p>
+real and complex <a class="reference external" href="https://github.com/georgtree/rbc-tk9">rbc-tk9</a> output, use Tcl 9 and RBC 0.8.1 or newer
+headers and runtime:</p>
 <div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./configure<span class="w"> </span>--with-tcl<span class="o">=</span>/path/to/tcl/lib<span class="w"> </span>--with-rbc<span class="o">=</span>/path/to/rbc-tk9
 make<span class="w"> </span>clean
 make
@@ -57,10 +57,6 @@ make
 library is not linked. <code class="docutils literal notranslate"><span class="pre">--without-rbc</span></code> selects the default list-only build. Even an enabled build can load and
 read lists without RBC installed. <code class="docutils literal notranslate"><span class="pre">rbc::vector</span></code> is required only when vector output is selected. No Tk
 initialization is needed, although the installed RBC binary must have its system library dependencies available.</p>
-<p>Use an RBC build with literal parenthesized vector names (<code class="docutils literal notranslate"><span class="pre">vector</span> <span class="pre">create</span> <span class="pre">-literal</span> <span class="pre">true</span></code>) and namespace-safe
-vector command deletion. The package version remains <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">0.8.0</span></code>, so an older build with the same
-version number is insufficient. This upgrade does not change the RBC stubs ABI or the optional <code class="docutils literal notranslate"><span class="pre">--with-rbc</span></code>
-configuration.</p>
 <p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. Defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code>.
 Either option can be overridden for a single <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> call, without changing the handle defaults:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>raw<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>error<span class="w"> </span><span class="o">-</span>namespace<span class="w"> </span><span class="o">::</span>wave<span class="k">]</span>
@@ -153,6 +149,14 @@ values unchanged. RBC notifications and command traces may execute application c
 updates are not a transaction against reentrant application code.</p>
 </section>
 </section>
+<section id="read-only-destinations">
+<span id="r-rbcbindings-read-only-destinations"></span><span id="r-3a3arbcbindingsqzread2donly20destinations"></span><h2>Read-only destinations<a class="headerlink" href="#read-only-destinations" title="Link to this heading">¶</a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code> preserves the read-only state and never unlocks a destination. A locked real or complex
+output fails with <code class="docutils literal notranslate"><span class="pre">RBC</span> <span class="pre">VECTOR</span> <span class="pre">READONLY</span></code>. Every selected destination is checked before reading/publishing
+results, so a pre-existing lock on a later column leaves earlier vectors unchanged. Permission is checked
+again during publication to handle callbacks. List output remains available regardless of destination locks.
+Unlock explicitly before replacing, or request a fresh destination / <code class="docutils literal notranslate"><span class="pre">#auto</span></code>. Newly created vectors are writable.</p>
+</section>
 <section id="automatic-and-explicit-output-vector-names">
 <span id="r-rbcbindings-automatic-and-explicit-output-vector-names"></span><span id="r-3a3arbcbindingsqzautomatic20and20explicit20output20vector20names"></span><h2>Automatic and explicit output vector names<a class="headerlink" href="#automatic-and-explicit-output-vector-names" title="Link to this heading">¶</a></h2>
 <p>For a single read, use <code class="docutils literal notranslate"><span class="pre">-name</span> <span class="pre">#auto</span></code> with vector output. For a bulk read, use <code class="docutils literal notranslate"><span class="pre">-names</span> <span class="pre">#auto</span></code> to allocate a
@@ -200,6 +204,7 @@ and are owned by the caller. If publication fails, vectors created by that read 
 <li><a class="reference internal" href="#collisions-and-numeric-types">Collisions and numeric types</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#read-only-destinations">Read-only destinations</a></li>
 <li><a class="reference internal" href="#automatic-and-explicit-output-vector-names">Automatic and explicit output vector names</a></li>
 </ul>
 </li>

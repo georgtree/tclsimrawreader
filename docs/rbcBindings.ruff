@@ -6,8 +6,8 @@ namespace eval rbcBindings {
         ## Optional RBC vector output
 
         The default build and output remain Tcl lists (or dictionaries of lists), with no RBC dependency. To enable
-        real and complex [rbc-tk9](https://github.com/georgtree/rbc-tk9) output, use Tcl 9 and matching RBC 0.8.0
-        headers:
+        real and complex [rbc-tk9](https://github.com/georgtree/rbc-tk9) output, use Tcl 9 and RBC 0.8.1 or newer
+        headers and runtime:
 
         ```sh
         ./configure --with-tcl=/path/to/tcl/lib --with-rbc=/path/to/rbc-tk9
@@ -20,11 +20,6 @@ namespace eval rbcBindings {
         library is not linked. `--without-rbc` selects the default list-only build. Even an enabled build can load and
         read lists without RBC installed. `rbc::vector` is required only when vector output is selected. No Tk
         initialization is needed, although the installed RBC binary must have its system library dependencies available.
-
-        Use an RBC build with literal parenthesized vector names (`vector create -literal true`) and namespace-safe
-        vector command deletion. The package version remains `rbc::vector 0.8.0`, so an older build with the same
-        version number is insufficient. This upgrade does not change the RBC stubs ABI or the optional `--with-rbc`
-        configuration.
 
         Set handle defaults with `-output list|vector` and `-ifexists error|replace`. Defaults are `list` and `error`.
         Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
@@ -98,6 +93,14 @@ namespace eval rbcBindings {
         and all known name/type collisions are checked before publication, so read and preflight errors leave existing
         values unchanged. RBC notifications and command traces may execute application callbacks during publication;
         updates are not a transaction against reentrant application code.
+
+        ## Read-only destinations
+
+        `-ifexists replace` preserves the read-only state and never unlocks a destination. A locked real or complex
+        output fails with `RBC VECTOR READONLY`. Every selected destination is checked before reading/publishing
+        results, so a pre-existing lock on a later column leaves earlier vectors unchanged. Permission is checked
+        again during publication to handle callbacks. List output remains available regardless of destination locks.
+        Unlock explicitly before replacing, or request a fresh destination / `#auto`. Newly created vectors are writable.
 
         ## Automatic and explicit output vector names
         For a single read, use `-name #auto` with vector output. For a bulk read, use `-names #auto` to allocate a

@@ -435,6 +435,33 @@ Values:
         namespace delete ::rawVectorTests::default ::rawVectorTests::other
     } -result {::rawVectorTests::other ::rawVectorTests::default::v(in) ::rawVectorTests::default}
 
+    foreach fixture {dc.raw ac.raw} {
+        test rawOutput-readonly-$fixture {locked later column prevents all replacements, then unlock and retry} -setup {
+            namespace eval ::rawVectorTests::locked {}
+            set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice $fixture] \
+                       -output vector -namespace ::rawVectorTests::locked -ifexists replace]
+            set mapping [$r vectors -all -count 3]
+            set first [lindex [dict values $mapping] 0]
+            set last [lindex [dict values $mapping] end]
+            set before {}
+            foreach v [dict values $mapping] {dict set before $v [$v index :]}
+            $last readonly true
+        } -body {
+            set code [catch {$r vectors -all -from 1 -count 1} message options]
+            set unchanged 1
+            foreach v [dict values $mapping] {
+                if {[$v index :] ne [dict get $before $v]} {set unchanged 0}
+            }
+            set listOk [expr {[dict size [$r vectors -all -count 1 -output list]] > 0}]
+            $last readonly false
+            $r vectors -all -from 1 -count 1
+            list $code [dict get $options -errorcode] $unchanged $listOk [$first length] [$last readonly]
+        } -cleanup {
+            $r close
+            namespace delete ::rawVectorTests::locked
+        } -result {1 {RBC VECTOR READONLY} 1 1 1 0}
+    }
+
     namespace delete ::rawVectorTests
 } else {
     test rawOutput-unavailable {vector requests fail clearly without changing list behavior} -body {
