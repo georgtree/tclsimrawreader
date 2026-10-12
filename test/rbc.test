@@ -155,8 +155,8 @@ if {$haveVectors} {
         rbc::vector create ::rawVectorTests::data::v(out) -type complex
         ::rawVectorTests::data::v(out) set {{7 8}}
     } -body {
-        set code [catch {namespace eval ::rawVectorTests::data \
-                             [list $r vector v(out) -output vector -ifexists replace]} message]
+        set code [catch {namespace eval ::rawVectorTests::data\
+                                 [list $r vector v(out) -output vector -ifexists replace]} message]
         list $code $message [::rawVectorTests::data::v(out) index :]
     } -result {1 {vector "::rawVectorTests::data::v(out)" has a different numeric type} {{7.0 8.0}}} -cleanup {
         $r close
@@ -227,7 +227,7 @@ Values:
         set same [expr {$names eq [namespace eval ::rawVectorTests::data\
                                      [list $r vectors -all -from 1 -count 1 -ifexists replace]]}]
         list [dict values $names] $values $same [[dict get $names v(1)(2:4)] index :]\
-             [info commands ::rawVectorTests::data::v]
+                [info commands ::rawVectorTests::data::v]
     } -result {{::rawVectorTests::data::v(1) ::rawVectorTests::data::v(1)(2:4)}\
                        {complex {{1.0 2.0} {5.0 6.0}} {} complex {{3.0 4.0} {7.0 8.0}} {}} 1 {{7.0 8.0}} {}} -cleanup {
         $r close
@@ -327,7 +327,10 @@ Values:
         set expected [$r vector time -count 3 -output list]
         $r close
         list $v [expr {[$v range 0 end] eq $expected}] [namespace exists ::nsRaw::nested]
-    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {::nsRaw::nested::time 1 1}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::nsRaw
+    } -result {::nsRaw::nested::time 1 1}
 
     test rawNamespace-dictionary {relative destination captured at creation; complex vectors and list override} -body {
         namespace eval ::nsRaw {}
@@ -342,7 +345,10 @@ Values:
             }
         }
         list $result [expr {[dict size $names] > 0}]
-    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {1 1}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::nsRaw
+    } -result {1 1}
 
     test rawNamespace-collision {override list default and enforce replace policy in destination} -body {
         set r [::tclsimrawreader::openraw $dcPath -namespace ::nsRaw]
@@ -350,7 +356,10 @@ Values:
         set failed [catch {$r vector v(out) -output vector}]
         set replaced [$r vector v(out) -output vector -ifexists replace -count 2]
         list $name $failed [expr {$name eq $replaced}] [$name length]
-    } -cleanup {catch {$r close}; namespace delete ::nsRaw} -result {::nsRaw::v(out) 1 1 2}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::nsRaw
+    } -result {::nsRaw::v(out) 1 1 2}
 
     test rawNamespace-global {explicit root namespace still protects Tcl time command} -body {
         set path [file join $currentDir raw_files ngspice tran.raw]
@@ -374,7 +383,10 @@ Values:
         }
         $r close
         list $ok [llength [info commands [dict get $a v(out)]]]
-    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::automatic} -result {1 1}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::automatic
+    } -result {1 1}
 
     test rawAuto-2 {single, explicit auto spelling, caller namespace and empty range} -body {
         set r [::tclsimrawreader::openraw $dcPath]
@@ -382,10 +394,14 @@ Values:
         set v [namespace eval ::rawVectorTests::caller [list $r vector v(out) -output vector -name #auto -count 0]]
         set literal [namespace eval ::rawVectorTests::caller [list $r vector v(out) -output vector -name auto]]
         list [namespace qualifiers $v] [$v length] $literal
-    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::caller} -result {::rawVectorTests::caller 0 ::rawVectorTests::caller::auto}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::caller
+    } -result {::rawVectorTests::caller 0 ::rawVectorTests::caller::auto}
 
     test rawAuto-3 {mixed dictionary naming preserves unspecified names and real/complex values} -body {
-        set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw] -namespace ::rawVectorTests::mixed]
+        set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice ac.raw]\
+                       -namespace ::rawVectorTests::mixed]
         set expected [$r vectors -all]
         set keys [dict keys $expected]
         set selected [lrange $keys 0 1]
@@ -393,7 +409,10 @@ Values:
         set ok 1
         dict for {key v} $d {if {[$v index :] ne [dict get $expected $key]} {set ok 0}}
         list $ok [dict get $d [lindex $keys 1]] [[dict get $d [lindex $keys 1]] type]
-    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::mixed} -result {1 ::rawVectorTests::mixed::saved complex}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::mixed
+    } -result {1 ::rawVectorTests::mixed::saved complex}
 
     test rawAuto-4 {invalid naming is rejected before vector creation} -body {
         set r [::tclsimrawreader::openraw $dcPath -namespace ::rawVectorTests::bad]
@@ -408,20 +427,31 @@ Values:
             {vectors -all -output vector -names malformed}
         } {lappend errors [catch {$r {*}$args}]}
         list $errors [info commands ::rawVectorTests::bad::*]
-    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::bad} -result {{1 1 1 1 1 1 1} {}}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::bad
+    } -result {{1 1 1 1 1 1 1} {}}
 
     test rawAuto-5 {nested namespace is preserved in returned command names} -body {
         set r [::tclsimrawreader::openraw $dcPath -namespace {::rawVectorTests::nested::child}]
         set v [$r vector v(out) -output vector -name #auto]
         list [namespace qualifiers $v] [expr {[$v index :] eq [$r vector v(out)]}]
-    } -cleanup {catch {$r close}; namespace delete {::rawVectorTests::nested::child}} -result {::rawVectorTests::nested::child 1}
+    } -cleanup {
+        catch {$r close}
+        namespace delete {::rawVectorTests::nested::child}
+    } -result {::rawVectorTests::nested::child 1}
 
     test rawAuto-6 {a later creation failure rolls back automatically created vectors} -body {
         set r [::tclsimrawreader::openraw $dcPath -namespace ::rawVectorTests::rollback]
         set keys [lrange [$r names] 0 1]
-        set code [catch {$r vectors $keys -output vector -names [dict create [lindex $keys 0] #auto [lindex $keys 1] ::missingAutoNamespace::saved]}]
+        set code [catch {$r vectors $keys -output vector\
+                                 -names [dict create [lindex $keys 0] #auto [lindex $keys 1]\
+                                                 ::missingAutoNamespace::saved]}]
         list $code [info commands ::rawVectorTests::rollback::*]
-    } -cleanup {catch {$r close}; namespace delete ::rawVectorTests::rollback} -result {1 {}}
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::rollback
+    } -result {1 {}}
 
 
     test rawAuto-7 {absolute auto overrides handle namespace; partial maps retain default names} -body {
@@ -438,19 +468,23 @@ Values:
     foreach fixture {dc.raw ac.raw} {
         test rawOutput-readonly-$fixture {locked later column prevents all replacements, then unlock and retry} -setup {
             namespace eval ::rawVectorTests::locked {}
-            set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice $fixture] \
-                       -output vector -namespace ::rawVectorTests::locked -ifexists replace]
+            set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice $fixture] -output vector\
+                           -namespace ::rawVectorTests::locked -ifexists replace]
             set mapping [$r vectors -all -count 3]
             set first [lindex [dict values $mapping] 0]
             set last [lindex [dict values $mapping] end]
             set before {}
-            foreach v [dict values $mapping] {dict set before $v [$v index :]}
+            foreach v [dict values $mapping] {
+                dict set before $v [$v index :]
+            }
             $last readonly true
         } -body {
             set code [catch {$r vectors -all -from 1 -count 1} message options]
             set unchanged 1
             foreach v [dict values $mapping] {
-                if {[$v index :] ne [dict get $before $v]} {set unchanged 0}
+                if {[$v index :] ne [dict get $before $v]} {
+                    set unchanged 0
+                }
             }
             set listOk [expr {[dict size [$r vectors -all -count 1 -output list]] > 0}]
             $last readonly false

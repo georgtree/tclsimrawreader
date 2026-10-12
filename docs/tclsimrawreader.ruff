@@ -9,11 +9,11 @@ namespace eval ::tclsimrawreader {
         #  -output mode - default output, `list` or `vector`; default is `list`
         #  -ifexists policy - default collision policy, `error` or `replace`; default is `error`
         #  -namespace name - fixed destination namespace for all vector output; created with missing parents at open
-        # Relative namespace names resolve against the caller opening the handle. Empty names are rejected.
-        # If omitted, vector destinations continue to use the namespace calling each read. Closing the handle does
-        # not delete the namespace or output vectors. The option also works with list defaults and later vector overrides.
         #  filepath - path to SPICE .raw file
-        # Returns: command name to work with the file, references as `RAWFILE` later
+        #
+        # Relative namespace names resolve against the caller opening the handle. Empty names are rejected. If omitted,
+        # vector destinations continue to use the namespace calling each read. Closing the handle does not delete the
+        # namespace or output RBC vectors. The option also works with list defaults and later vector overrides.
         #
         # Example:
         #```tcl
@@ -22,15 +22,15 @@ namespace eval ::tclsimrawreader {
         # set rawfile [tclsimrawreader::openraw -dialect ltspice /path/to/ac.raw]
         #```
         # Synopsis: ?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath
+        # Returns: command name to work with the file, references as `RAWFILE` later
     }
 }
 
 namespace eval ::tclsimrawreader::RAWFILE {
     proc names {args} {
-        # Returns list of vectors' names defined in the header. If provided without `-plot` option, returns names
-        # from the first plot.
+        # Gets list of vectors' (variables') names defined in the header. If provided without `-plot` option, returns
+        # names from the first plot.
         #  -plot index - index of the plot, optional
-        # Returns: list
         #
         # Example:
         #```tcl
@@ -38,13 +38,13 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile names -plot 1
         #```
         # Synopsis: ?-plot index?
+        # Returns: list
     }
 
     proc header {args} {
-        # Returns dictionary containing metadata from the header for the selected plot. If provided without `-plot`
-        #  option, returns header from the first plot.
+        # Gets dictionary containing metadata from the header for the selected plot. If provided without `-plot`
+        # option, returns header from the first plot.
         #  -plot index - index of the plot, optional
-        # Returns: dictionary
         #
         # Result dictionary containing next keys:
         #   - `title` \- string from `Title:` header field
@@ -70,12 +70,13 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile header
         # $rawfile header -plot 1
         #```
+        #
         # Synopsis: ?-plot index?
+        # Returns: dictionary
     }
 
     proc plots {} {
-        # Returns list of dictionaries containing information about the plots in the .raw file.
-        # Returns: list of dictionaries
+        # Gets list of dictionaries containing information about the plots in the .raw file.
         #
         # Each dictionary contains next keys:
         #   - `index` \- index of the plot, starting with 0
@@ -86,10 +87,12 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #   - `npoints` \- string from `No. Points:` plot's header field
         #   - `dataoffset` \- number of bytes immediately after `Binary:`/`Values:` marker line for plot
         #   - `databytes` \- number of bytes occupied by a data block of the plot
+        #
+        # Returns: list of dictionaries
     }
 
     proc vector {args} {
-        # Returns the values of specified vector (variable) for selected plot, in certain range if specified. If plot
+        # Gets the values of specified vector (variable) for selected plot, in certain range if specified. If plot
         # index is not provided, return values from the first plot.
         #  -plot index - index of the plot, optional
         #  name - name of the vector (variable)
@@ -99,13 +102,14 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -output mode - override the handle output for this call: `list` or `vector`
         #  -name destination - explicit output name or `#auto` for a fresh RBC-generated name; vector output only
         #  -ifexists policy - override collision handling for this call: `error` or `replace`
-        # In vector mode, safe literal names (including `v(out)` and `v(1)`) are preserved and qualified in the
-        # handle namespace, if configured, or the calling namespace otherwise. Unsupported/namespace-bearing names and names beginning with the reserved `_raw_`
-        # prefix become `_raw_` plus uppercase hexadecimal UTF-8 bytes. Original dictionary keys are unchanged.
-        # Requires RBC's `-literal true` creation support. New vectors have no mapped arrays and outlive the handle.
-        # Complex raw data creates complex RBC vectors. Replacement preserves same-type vector identity; an
-        # unrelated command or a numeric type mismatch is an error. See the start page for naming and ownership.
-        # Returns: list of values in list mode, or fully qualified RBC vector command name in vector mode
+        #
+        # In vector mode, safe literal names (including `v(out)` and `v(1)`) are preserved and qualified in the handle
+        # namespace, if configured, or the calling namespace otherwise. Unsupported/namespace-bearing names and names
+        # beginning with the reserved `_raw_` prefix become `_raw_` plus uppercase hexadecimal UTF-8 bytes. Original
+        # dictionary keys are unchanged. Requires RBC's `-literal true` creation support. New vectors have no mapped
+        # arrays and outlive the handle. Complex raw data creates complex RBC vectors. Replacement preserves same-type
+        # vector identity; an unrelated command or a numeric type mismatch is an error. See the start page for naming
+        # and ownership.
         #
         # Example:
         #```tcl
@@ -115,11 +119,13 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vector ID(M1) -count 16
         # $rawfile vector ID(M1)
         #```
-        # Synopsis: ?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?
+        # Synopsis: ?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace?
+        # ?-name destination|#auto?
+        # Returns: list of values in list mode, or fully qualified RBC vector command name in vector mode
     }
 
     proc vectors {args} {
-        # Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+        # Gets the values of specified vectors (variables) for selected plot (or all vectors), in certain range
         # if specified. If plot index is not provided, return values from the first plot.
         #  -plot index - index of the plot, optional
         #  -all|namesList - list of vectors' (variables') names, or `-all` to read all availible vectors
@@ -127,11 +133,12 @@ namespace eval ::tclsimrawreader::RAWFILE {
         #  -count index - number of values from the number provided by `-from`, or from the start otherwise, optional,
         #   integer
         #  -output mode - override the handle output for this call: `list` or `vector`
-        #  -names destinations - `#auto` for all selected signals, or a raw-name-to-destination dictionary; vector output only
+        #  -names destinations - `#auto` for all selected signals, or a raw-name-to-destination dictionary;
+        #   vector output only
         #  -ifexists policy - override collision handling for this call: `error` or `replace`
-        # Options do not change the handle defaults. Vector naming, types, collision handling and ownership follow
-        # the single-vector command. All selected data is decoded before any destination data is replaced.
-        # Returns: dictionary of original raw names to value lists, or to fully qualified RBC command names
+        #
+        # Options do not change the handle defaults. Vector naming, types, collision handling and ownership follow the
+        # single-vector command. All selected data is decoded before any destination data is replaced.
         #
         # Example:
         #```tcl
@@ -142,7 +149,9 @@ namespace eval ::tclsimrawreader::RAWFILE {
         # $rawfile vectors {ID(M1) V(VD)}
         # $rawfile vectors -plot 2 -all 
         #```
-        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?
+        # Synopsis: ?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector?
+        # ?-ifexists error|replace? ?-names dictionary|#auto?
+        # Returns: dictionary of original raw names to value lists, or to fully qualified RBC vectors' commands' names
     }
 
     proc close {} {

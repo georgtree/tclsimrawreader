@@ -1,7 +1,3 @@
 package require argparse
 
-namespace eval ::tclsimrawreader {
-
-    
-
-}
+namespace eval ::tclsimrawreader {}

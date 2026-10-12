@@ -50,18 +50,16 @@ Fixed destination namespace for all vector output; created with missing parents 
 .TP
 -output mode
 Default output, list or vector; default is list
-.RE
-.PP
-\fBDescription\fR
-.PP
-Relative namespace names resolve against the caller opening the handle\&. Empty names are rejected\&.
-If omitted, vector destinations continue to use the namespace calling each read\&. Closing the handle does
-not delete the namespace or output vectors\&. The option also works with list defaults and later vector overrides\&.
-.RS 4n
 .TP
 filepath
 Path to SPICE \&.raw file\&.
 .RE
+.PP
+\fBDescription\fR
+.PP
+Relative namespace names resolve against the caller opening the handle\&. Empty names are rejected\&. If omitted,
+vector destinations continue to use the namespace calling each read\&. Closing the handle does not delete the
+namespace or output RBC vectors\&. The option also works with list defaults and later vector overrides\&.
 .PP
 Example:
 .PP
@@ -98,19 +96,19 @@ The ensemble supports the following subcommands:
 Closes channel to provided \&.raw file and deletes subcommand\&.
 .TP
 \fIheader\fP
-Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot option, returns header from the first plot\&. dictionary\&.
+Gets dictionary containing metadata from the header for the selected plot\&. If provided without -plot option, returns header from the first plot\&.
 .TP
 \fInames\fP
-Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names from the first plot\&. list\&.
+Gets list of vectors' (variables') names defined in the header\&. If provided without -plot option, returns names from the first plot\&.
 .TP
 \fIplots\fP
-Returns list of dictionaries containing information about the plots in the \&.raw file\&. list of dictionaries\&.
+Gets list of dictionaries containing information about the plots in the \&.raw file\&.
 .TP
 \fIvector\fP
-Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot index is not provided, return values from the first plot\&. list of values in list mode, or fully qualified RBC vector command name in vector mode\&.
+Gets the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot index is not provided, return values from the first plot\&.
 .TP
 \fIvectors\fP
-Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified\&. If plot index is not provided, return values from the first plot\&. dictionary of original raw names to value lists, or to fully qualified RBC command names\&.
+Gets the values of specified vectors (variables) for selected plot (or all vectors), in certain range if specified\&. If plot index is not provided, return values from the first plot\&.
 .RE
 .PP
 Refer to the documentation of each subcommand for details\&.
@@ -139,9 +137,8 @@ $rawfile close
 \fBRAWFILE header\fR (::tclsimrawreader)
 .RE
 .PP
-Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot
+Gets dictionary containing metadata from the header for the selected plot\&. If provided without -plot
 option, returns header from the first plot\&.
-dictionary
 .RS 4n
 \fBRAWFILE header\fP \fI?-plot index?\fP
 .br
@@ -213,17 +210,14 @@ $rawfile header -plot 1
 .PP
 \fBReturn value\fR
 .PP
-Returns dictionary containing metadata from the header for the selected plot\&. If provided without -plot
-option, returns header from the first plot\&.
 dictionary
 .PP
 .RS -4n
 \fBRAWFILE names\fR (::tclsimrawreader)
 .RE
 .PP
-Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names
-from the first plot\&.
-list
+Gets list of vectors' (variables') names defined in the header\&. If provided without -plot option, returns
+names from the first plot\&.
 .RS 4n
 \fBRAWFILE names\fP \fI?-plot index?\fP
 .br
@@ -249,16 +243,13 @@ $rawfile names -plot 1
 .PP
 \fBReturn value\fR
 .PP
-Returns list of vectors' names defined in the header\&. If provided without -plot option, returns names
-from the first plot\&.
 list
 .PP
 .RS -4n
 \fBRAWFILE plots\fR (::tclsimrawreader)
 .RE
 .PP
-Returns list of dictionaries containing information about the plots in the \&.raw file\&.
-list of dictionaries
+Gets list of dictionaries containing information about the plots in the \&.raw file\&.
 .RS 4n
 \fBRAWFILE plots\fP
 .br
@@ -294,16 +285,14 @@ databytes - number of bytes occupied by a data block of the plot
 .PP
 \fBReturn value\fR
 .PP
-Returns list of dictionaries containing information about the plots in the \&.raw file\&.
 list of dictionaries
 .PP
 .RS -4n
 \fBRAWFILE vector\fR (::tclsimrawreader)
 .RE
 .PP
-Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
+Gets the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
 index is not provided, return values from the first plot\&.
-list of values in list mode, or fully qualified RBC vector command name in vector mode
 .RS 4n
 \fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?\fP
 .br
@@ -336,12 +325,13 @@ Name of the vector (variable)
 .PP
 \fBDescription\fR
 .PP
-In vector mode, safe literal names (including v(out) and v(1)) are preserved and qualified in the
-handle namespace, if configured, or the calling namespace otherwise\&. Unsupported/namespace-bearing names and names beginning with the reserved _raw_
-prefix become _raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original dictionary keys are unchanged\&.
-Requires RBC's -literal true creation support\&. New vectors have no mapped arrays and outlive the handle\&.
-Complex raw data creates complex RBC vectors\&. Replacement preserves same-type vector identity; an
-unrelated command or a numeric type mismatch is an error\&. See the start page for naming and ownership\&.
+In vector mode, safe literal names (including v(out) and v(1)) are preserved and qualified in the handle
+namespace, if configured, or the calling namespace otherwise\&. Unsupported/namespace-bearing names and names
+beginning with the reserved _raw_ prefix become _raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original
+dictionary keys are unchanged\&. Requires RBC's -literal true creation support\&. New vectors have no mapped
+arrays and outlive the handle\&. Complex raw data creates complex RBC vectors\&. Replacement preserves same-type
+vector identity; an unrelated command or a numeric type mismatch is an error\&. See the start page for naming
+and ownership\&.
 .PP
 Example:
 .PP
@@ -357,17 +347,14 @@ $rawfile vector ID(M1)
 .PP
 \fBReturn value\fR
 .PP
-Returns the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
-index is not provided, return values from the first plot\&.
 list of values in list mode, or fully qualified RBC vector command name in vector mode
 .PP
 .RS -4n
 \fBRAWFILE vectors\fR (::tclsimrawreader)
 .RE
 .PP
-Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
+Gets the values of specified vectors (variables) for selected plot (or all vectors), in certain range
 if specified\&. If plot index is not provided, return values from the first plot\&.
-dictionary of original raw names to value lists, or to fully qualified RBC command names
 .RS 4n
 \fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?\fP
 .br
@@ -400,8 +387,8 @@ Index of the plot, optional\&.
 .PP
 \fBDescription\fR
 .PP
-Options do not change the handle defaults\&. Vector naming, types, collision handling and ownership follow
-the single-vector command\&. All selected data is decoded before any destination data is replaced\&.
+Options do not change the handle defaults\&. Vector naming, types, collision handling and ownership follow the
+single-vector command\&. All selected data is decoded before any destination data is replaced\&.
 .PP
 Example:
 .PP
@@ -418,9 +405,7 @@ $rawfile vectors -plot 2 -all
 .PP
 \fBReturn value\fR
 .PP
-Returns the values of specified vectors (variables) for selected plot (or all vectors), in certain range
-if specified\&. If plot index is not provided, return values from the first plot\&.
-dictionary of original raw names to value lists, or to fully qualified RBC command names
+dictionary of original raw names to value lists, or to fully qualified RBC vectors' commands' names
 
 
 .SH SEE ALSO
