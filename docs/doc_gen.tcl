@@ -34,6 +34,9 @@ ruff::document $namespaces -format nroff -outdir $docDir -outfile tclsimrawreade
 extensions = [
     "sphinx.ext.githubpages",
 ]
+suppress_warnings = [
+    "image.not_readable",
+]
 html_theme = "classic"
 html_theme_options = {
     "stickysidebar": True,

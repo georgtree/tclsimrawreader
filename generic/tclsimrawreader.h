@@ -37,7 +37,7 @@ typedef enum RawVectorResultMode { RAW_VECTOR_RESULT_LIST, RAW_VECTOR_RESULT_DIC
 typedef struct RawOutputOptions {
     int vectors; /* Zero returns lists; nonzero publishes RBC vectors. */
     int replace; /* Zero rejects collisions; nonzero replaces same-type RBC data. */
-    Tcl_Obj *name, *names; /* Borrowed per-read destination options; never stored on a handle. */
+    Tcl_Obj *name, *names, *namespaceOption; /* Borrowed per-read destination options; never stored on a handle. */
 } RawOutputOptions;
 
 typedef struct RawNumericColumn {

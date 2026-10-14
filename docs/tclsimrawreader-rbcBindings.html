@@ -70,7 +70,7 @@ Either option can be overridden for a single <code class="docutils literal notra
 <span class="c"># Created vectors remain alive and are owned by the caller.</span>
 </pre></div>
 </div>
-<p>For <code class="docutils literal notranslate"><span class="pre">openraw</span></code>, options may precede or follow the file name. For read commands, <code class="docutils literal notranslate"><span class="pre">-output</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> may
+<p>For <code class="docutils literal notranslate"><span class="pre">openraw</span></code>, options may precede or follow the file name. For read commands, <code class="docutils literal notranslate"><span class="pre">-output</span></code>, <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> and <code class="docutils literal notranslate"><span class="pre">-namespace</span></code> may
 precede or follow the selection; <code class="docutils literal notranslate"><span class="pre">-plot</span></code> precedes it as before. Existing <code class="docutils literal notranslate"><span class="pre">-from</span></code>, <code class="docutils literal notranslate"><span class="pre">-count</span></code>, selected-name
 lists, <code class="docutils literal notranslate"><span class="pre">-all</span></code>, dialects and multi-plot handling work in both output modes. In vector mode, <code class="docutils literal notranslate"><span class="pre">vector</span></code> returns one
 fully qualified command name; <code class="docutils literal notranslate"><span class="pre">vectors</span></code> returns a dictionary whose original raw-name keys map to fully
@@ -79,6 +79,9 @@ vector.</p>
 <p>An explicit <code class="docutils literal notranslate"><span class="pre">openraw</span> <span class="pre">-namespace</span> <span class="pre">name</span></code> selects a fixed destination for all vector reads. Relative names resolve
 against the opening caller; missing namespaces and parents are created at open time. The qualified name is
 retained for reads from other namespaces. Without this option, destinations use the read caller as before.
+A per-read <code class="docutils literal notranslate"><span class="pre">-namespace</span> <span class="pre">name</span></code> on <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> overrides the handle setting for that call only.
+It requires effective vector output, resolves relative to the read caller, and creates missing parents.
+For example: <code class="docutils literal notranslate"><span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span> <span class="pre">-output</span> <span class="pre">vector</span> <span class="pre">-namespace</span> <span class="pre">::snapshots</span> <span class="pre">-names</span> <span class="pre">#auto</span></code>.
 Empty namespace names are rejected. This option also works with list defaults and later <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">vector</span></code>
 overrides. Closing the handle deletes neither the namespace nor its caller-owned output vectors.</p>
 <section id="destination-names-and-ownership">
@@ -125,9 +128,9 @@ prefix <code class="docutils literal notranslate"><span class="pre">_raw_</span>
 original name.  The empty name maps to <code class="docutils literal notranslate"><span class="pre">_raw_</span></code>. Reserving this prefix keeps fallback names distinct from
 literal names; a raw name that already begins with <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> is itself encoded. Original dictionary keys are
 always retained.</p>
-<p>The destination is in the namespace active when the read command is invoked. Raw namespace separators are
+<p>The destination uses the per-call namespace, then the handle namespace, then the read caller namespace. Raw namespace separators are
 encoded, so a raw name cannot select a different namespace. Use
-<code class="docutils literal notranslate"><span class="pre">namespace</span> <span class="pre">eval</span> <span class="pre">::signals</span> <span class="pre">[list</span> <span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span> <span class="pre">-output</span> <span class="pre">vector]</span></code> to choose a namespace explicitly
+<code class="docutils literal notranslate"><span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span> <span class="pre">-output</span> <span class="pre">vector</span> <span class="pre">-namespace</span> <span class="pre">::signals</span></code> to choose a namespace explicitly
 (create it first). Newly created vectors have no mapped Tcl array variable: use the returned command, for
 example <code class="docutils literal notranslate"><span class="pre">$signal</span> <span class="pre">index</span> <span class="pre">1:20</span></code>, rather than Tcl array substitution <code class="docutils literal notranslate"><span class="pre">$v(out)(1:20)</span></code>.  New vector indexes start at
 zero, including partial reads. Closing a handle does not destroy its output vectors; use <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">destroy</span></code>
@@ -176,8 +179,8 @@ fresh RBC vector for every selected signal:</p>
 <code class="docutils literal notranslate"><span class="pre">-name</span></code> belongs to <code class="docutils literal notranslate"><span class="pre">vector</span></code>; <code class="docutils literal notranslate"><span class="pre">-names</span></code> belongs to <code class="docutils literal notranslate"><span class="pre">vectors</span></code>. Both require vector output and may precede or
 follow the selection. They are per-read options, not <code class="docutils literal notranslate"><span class="pre">openraw</span></code> defaults.  Unknown or unselected keys, duplicate
 selections/destinations, and empty destinations are errors.</p>
-<p>Relative destinations, including <code class="docutils literal notranslate"><span class="pre">#auto</span></code>, use the handle’s <code class="docutils literal notranslate"><span class="pre">-namespace</span></code>, or the read caller’s namespace when
-none was specified. An absolute destination overrides this location; its parent namespace must exist. RBC
+<p>Relative destinations, including <code class="docutils literal notranslate"><span class="pre">#auto</span></code>, use the per-call <code class="docutils literal notranslate"><span class="pre">-namespace</span></code>, the handle’s namespace, or the read
+caller’s namespace, in that order. Omitted <code class="docutils literal notranslate"><span class="pre">-names</span></code> entries use signal-derived names in the selected namespace. An absolute destination overrides this location; its parent namespace must exist. RBC
 itself expands a final <code class="docutils literal notranslate"><span class="pre">#auto</span></code> component in the selected namespace: the reader does not generate names or
 counters. <code class="docutils literal notranslate"><span class="pre">auto</span></code> without <code class="docutils literal notranslate"><span class="pre">#</span></code> is an ordinary explicit name.  Repeated automatic reads create distinct vectors
 even with <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code>; explicit names retain the existing collision/type policy. Real and complex

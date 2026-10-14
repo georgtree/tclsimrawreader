@@ -16,7 +16,7 @@ namespace eval {Notes and internals} {
         specifications and ordinary real names cannot create mapped arrays. No Tcl script is assembled from raw
         names; creation uses `Tcl_EvalObjv`. Safe literal names retain their spelling; unsupported names, namespace
         separators, and the reserved `_raw_` prefix are encoded as `_raw_` plus hexadecimal UTF-8 bytes. This keeps
-        literal and encoded names disjoint and confines creation to the explicit handle namespace when supplied,
+        literal and encoded names disjoint and confines creation to the per-call namespace when supplied, then the handle namespace,
         or the read caller's namespace otherwise. The explicit namespace is created and captured at open time;
         the handle retains its name, not ownership of the namespace.
 

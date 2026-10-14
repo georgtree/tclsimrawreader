@@ -42,7 +42,7 @@ $raw close
 .fi
 .RE
 .PP
-For openraw, options may precede or follow the file name\&. For read commands, -output and -ifexists may
+For openraw, options may precede or follow the file name\&. For read commands, -output, -ifexists and -namespace may
 precede or follow the selection; -plot precedes it as before\&. Existing -from, -count, selected-name
 lists, -all, dialects and multi-plot handling work in both output modes\&. In vector mode, vector returns one
 fully qualified command name; vectors returns a dictionary whose original raw-name keys map to fully
@@ -52,6 +52,9 @@ vector\&.
 An explicit openraw -namespace name selects a fixed destination for all vector reads\&. Relative names resolve
 against the opening caller; missing namespaces and parents are created at open time\&. The qualified name is
 retained for reads from other namespaces\&. Without this option, destinations use the read caller as before\&.
+A per-read -namespace name on vector or vectors overrides the handle setting for that call only\&.
+It requires effective vector output, resolves relative to the read caller, and creates missing parents\&.
+For example: $raw vectors -all -output vector -namespace ::snapshots -names #auto\&.
 Empty namespace names are rejected\&. This option also works with list defaults and later -output vector
 overrides\&. Closing the handle deletes neither the namespace nor its caller-owned output vectors\&.
 .SS "DESTINATION NAMES AND OWNERSHIP"
@@ -81,9 +84,9 @@ original name\&.  The empty name maps to _raw_\&. Reserving this prefix keeps fa
 literal names; a raw name that already begins with _raw_ is itself encoded\&. Original dictionary keys are
 always retained\&.
 .PP
-The destination is in the namespace active when the read command is invoked\&. Raw namespace separators are
+The destination uses the per-call namespace, then the handle namespace, then the read caller namespace\&. Raw namespace separators are
 encoded, so a raw name cannot select a different namespace\&. Use
-namespace eval ::signals [list $raw vectors -all -output vector] to choose a namespace explicitly
+$raw vectors -all -output vector -namespace ::signals to choose a namespace explicitly
 (create it first)\&. Newly created vectors have no mapped Tcl array variable: use the returned command, for
 example $signal index 1:20, rather than Tcl array substitution $v(out)(1:20)\&.  New vector indexes start at
 zero, including partial reads\&. Closing a handle does not destroy its output vectors; use rbc::vector destroy
@@ -135,8 +138,8 @@ $raw close
 follow the selection\&. They are per-read options, not openraw defaults\&.  Unknown or unselected keys, duplicate
 selections/destinations, and empty destinations are errors\&.
 .PP
-Relative destinations, including #auto, use the handle's -namespace, or the read caller's namespace when
-none was specified\&. An absolute destination overrides this location; its parent namespace must exist\&. RBC
+Relative destinations, including #auto, use the per-call -namespace, the handle's namespace, or the read
+caller's namespace, in that order\&. Omitted -names entries use signal-derived names in the selected namespace\&. An absolute destination overrides this location; its parent namespace must exist\&. RBC
 itself expands a final #auto component in the selected namespace: the reader does not generate names or
 counters\&. auto without # is an ordinary explicit name\&.  Repeated automatic reads create distinct vectors
 even with -ifexists replace; explicit names retain the existing collision/type policy\&. Real and complex

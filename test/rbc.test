@@ -496,6 +496,67 @@ Values:
         } -result {1 {RBC VECTOR READONLY} 1 1 1 0}
     }
 
+    test rawNamespace-per-call {relative override resolves against read caller and leaves defaults unchanged} -body {
+        set r [::tclsimrawreader::openraw $dcPath -output vector -namespace ::rawVectorTests::defaults]
+        namespace eval ::rawVectorTests::caller {}
+        set a [namespace eval ::rawVectorTests::caller [list $r vector -namespace child::nested v(out) -name named]]
+        set b [$r vector v(out) -name #auto]
+        set result [list $a [namespace qualifiers $b] [expr {[$a range 0 end] eq [$b range 0 end]}]]
+        $r close
+        lappend result [namespace exists ::rawVectorTests::caller::child::nested] [expr {[info commands $a] ne {}}]
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::caller ::rawVectorTests::defaults
+    } -result {::rawVectorTests::caller::child::nested::named ::rawVectorTests::defaults 1 1 1}
+
+    test rawNamespace-multiple {leading/trailing options, dictionary names and fully qualified auto names} -body {
+        set r [::tclsimrawreader::openraw $dcPath]
+        namespace eval ::rawVectorTests::absolute {}
+        set a [$r vectors -namespace ::rawVectorTests::selected -output vector {v(out) v(in)}\
+                       -names {v(out) ::rawVectorTests::absolute::#auto v(in) auto}]
+        set b [$r vectors {v(out) v(in)} -output vector -namespace ::rawVectorTests::selected -names #auto]
+        list [namespace qualifiers [dict get $a v(out)]] [dict get $a v(in)]\
+                [lsort -unique [lmap v [dict values $b] {namespace qualifiers $v}]]\
+                [expr {[namespace tail [dict get $a v(out)]] ne "#auto"}]
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::selected ::rawVectorTests::absolute
+    } -result {::rawVectorTests::absolute ::rawVectorTests::selected::auto ::rawVectorTests::selected 1}
+
+    test rawNamespace-derived {omitted names use override; absolute destinations and root work} -body {
+        set r [::tclsimrawreader::openraw $dcPath -output vector]
+        set a [$r vectors {v(out) v(in)} -namespace ::rawVectorTests::selected -names {v(out) #auto}]
+        set b [$r vector v(out) -namespace :: -name ::rawVectorTests::selected::named]
+        set c [$r vector v(out) -namespace :: -name #auto]
+        set result [list [dict get $a v(in)] $b [namespace qualifiers $c]]
+        ::rbc::vector destroy $c
+        set result
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::selected
+    } -result {::rawVectorTests::selected::v(in) ::rawVectorTests::selected::named {}}
+
+    test rawNamespace-errors {empty namespace, list mode and absent absolute parent} -body {
+        set r [::tclsimrawreader::openraw $dcPath]
+        set a [catch {$r vector v(out) -output vector -namespace {}} ma]
+        set b [catch {$r vectors -all -namespace ::rawVectorTests::selected} mb]
+        set c [catch {$r vector v(out) -output vector -namespace ::rawVectorTests::selected\
+                              -name ::rawVectorTests::absent::v}]
+        list $a $ma $b $mb $c [namespace exists ::rawVectorTests::absent]
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::selected
+    } -result {1 {-namespace must not be empty} 1 {-namespace requires -output vector} 1 0}
+
+    test rawNamespace-empty-selection {empty selection still validates namespace} -body {
+        set r [::tclsimrawreader::openraw $dcPath -output vector]
+        list [$r vectors {} -namespace ::rawVectorTests::selected] [namespace exists ::rawVectorTests::selected]\
+                [catch {$r vectors {} -namespace {}}]
+    } -cleanup {
+        catch {$r close}
+        namespace delete ::rawVectorTests::selected
+    } -result {{} 1 1}
+
     namespace delete ::rawVectorTests
 } else {
     test rawOutput-unavailable {vector requests fail clearly without changing list behavior} -body {

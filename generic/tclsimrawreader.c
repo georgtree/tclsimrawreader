@@ -4642,6 +4642,8 @@ static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj 
         output->name = valueObj;
     } else if (strcmp(option, "-names") == 0) {
         output->names = valueObj;
+    } else if (strcmp(option, "-namespace") == 0) {
+        output->namespaceOption = valueObj;
     } else {
         if (strcmp(value, "error") == 0) {
             output->replace = 0;
@@ -4769,6 +4771,10 @@ static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const ob
 /* Validate per-read naming independently of RBC availability and before publication. */
 static int RawValidateNames(Tcl_Interp *interp, RawOutputOptions *output, int dictionary, RawPlot *plot, Tcl_Size n,
                             Tcl_Size *indexes) {
+    if (output->namespaceOption && !output->vectors) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("-namespace requires -output vector", -1));
+        return TCL_ERROR;
+    }
     if (!output->name && !output->names) {
         return TCL_OK;
     }        
@@ -4895,7 +4901,7 @@ static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_O
         }
         opt = Tcl_GetString(objv[i]);
         if (strcmp(opt, "-output") == 0 || strcmp(opt, "-ifexists") == 0 || strcmp(opt, "-name") == 0 ||
-            strcmp(opt, "-names") == 0) {
+            strcmp(opt, "-names") == 0 || strcmp(opt, "-namespace") == 0) {
             if (RawParseOutputOption(interp, opt, objv[i + 1], output) != TCL_OK) {
                 return TCL_ERROR;
             }
@@ -4998,8 +5004,8 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *
  *      Decodes selected columns into owned numeric buffers and publishes real/complex RBC vectors only after the
  *      complete read succeeds. Binary reads remain chunked; ASCII reads reuse the existing point/token parser.
- *      No per-sample Tcl objects are created. An explicit handle namespace overrides the read caller. Names and
- * collisions are checked before reading and rechecked at publication. Returns a vector command name, or a raw-name to
+ *      No per-sample Tcl objects are created. A per-call namespace overrides the handle namespace, then the read caller.
+ * Names and collisions are checked before reading and rechecked at publication. Returns a vector command name, or a raw-name to
  * vector-name dictionary.
  *
  * Parameters:
@@ -5031,10 +5037,6 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
         Tcl_SetObjResult(interp, Tcl_NewStringObj("raw handle was closed while loading RBC", -1));
         return TCL_ERROR;
     }
-    if (numVars == 0) {
-        *objPtr = Tcl_NewDictObj();
-        return TCL_OK;
-    }
     if ((size_t)numVars > SIZE_MAX / sizeof(*columns) || (size_t)numVars > SIZE_MAX / sizeof(*names)) {
         Tcl_SetObjResult(interp, Tcl_NewStringObj("raw numeric column array overflow", -1));
         return TCL_ERROR;
@@ -5043,11 +5045,19 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     names = (Tcl_Obj **)Tcl_Alloc((size_t)numVars * sizeof(*names));
     memset(columns, 0, (size_t)numVars * sizeof(*columns));
     memset(names, 0, (size_t)numVars * sizeof(*names));
+    Tcl_Obj *nsName = output->namespaceOption ? ResolveOutputNamespace(interp, output->namespaceOption) : NULL;
+    if (output->namespaceOption && !nsName) goto done;
+    const char *ns = nsName ? Tcl_GetString(nsName)
+                           : (rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
+                                                  : Tcl_GetCurrentNamespace(interp)->fullName);
+    if (numVars == 0) {
+        *objPtr = Tcl_NewDictObj();
+        status = TCL_OK;
+        goto done;
+    }
     for (Tcl_Size i = 0; i < numVars; i++) {
         RawVariable *variable = &h->variables[varIndexes[i]];
         Tcl_Size components = variable->storage == RAW_VALUE_COMPLEX128 ? 2 : 1;
-        const char *ns = rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
-                                              : Tcl_GetCurrentNamespace(interp)->fullName;
         Tcl_Obj *dest = output->name;
         if (output->names) {
             if (strcmp(Tcl_GetString(output->names), "#auto") == 0) {
@@ -5178,6 +5188,7 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     *objPtr = result;
     status = TCL_OK;
 done:
+    if (nsName) Tcl_DecrRefCount(nsName);
     if (buffer) {
         Tcl_Free((char *)buffer);
     }
@@ -5348,7 +5359,8 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
         while (next < objc) {
             const char *option = Tcl_GetString(objv[next]);
             if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
-                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0) {
+                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0 &&
+                strcmp(option, "-namespace") != 0) {
                 break;
             }
             if (next + 1 >= objc) {
@@ -5421,7 +5433,8 @@ static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc
         while (next < objc) {
             const char *option = Tcl_GetString(objv[next]);
             if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
-                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0) {
+                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0 &&
+                strcmp(option, "-namespace") != 0) {
                 break;
             }
             if (next + 1 >= objc) {

@@ -17,9 +17,9 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .br
 \fBRAWFILE plots\fP
 .br
-\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto? ?-namespace name?\fP
 .br
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto? ?-namespace name?\fP
 .br
 .SH ::TCLSIMRAWREADER
 .SH COMMANDS
@@ -294,7 +294,7 @@ list of dictionaries
 Gets the values of specified vector (variable) for selected plot, in certain range if specified\&. If plot
 index is not provided, return values from the first plot\&.
 .RS 4n
-\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto?\fP
+\fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto? ?-namespace name?\fP
 .br
 .RE
 .PP
@@ -313,6 +313,9 @@ Override collision handling for this call: error or replace
 -name destination
 Explicit output name or #auto for a fresh RBC-generated name; vector output only\&.
 .TP
+-namespace name
+Destination override for this read; vector output only, relative to the caller, created if missing\&.
+.TP
 -output mode
 Override the handle output for this call: list or vector
 .TP
@@ -326,12 +329,14 @@ Name of the vector (variable)
 \fBDescription\fR
 .PP
 In vector mode, safe literal names (including v(out) and v(1)) are preserved and qualified in the handle
-namespace, if configured, or the calling namespace otherwise\&. Unsupported/namespace-bearing names and names
+namespace, if configured, or the calling namespace otherwise\&. A per-call -namespace takes precedence\&. Unsupported/namespace-bearing names and names
 beginning with the reserved _raw_ prefix become _raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original
 dictionary keys are unchanged\&. Requires RBC's -literal true creation support\&. New vectors have no mapped
 arrays and outlive the handle\&. Complex raw data creates complex RBC vectors\&. Replacement preserves same-type
 vector identity; an unrelated command or a numeric type mismatch is an error\&. See the start page for naming
-and ownership\&.
+and ownership\&. Relative -namespace resolves against the read caller and creates missing parents\&.
+Empty namespaces are rejected\&. Fully qualified destinations override -namespace; their parent must exist\&.
+RBC expands a final #auto component in the selected namespace\&. Overrides do not change handle defaults\&.
 .PP
 Example:
 .PP
@@ -356,7 +361,7 @@ list of values in list mode, or fully qualified RBC vector command name in vecto
 Gets the values of specified vectors (variables) for selected plot (or all vectors), in certain range
 if specified\&. If plot index is not provided, return values from the first plot\&.
 .RS 4n
-\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto?\fP
+\fBRAWFILE vectors\fP \fI?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto? ?-namespace name?\fP
 .br
 .RE
 .PP
@@ -378,6 +383,9 @@ Override collision handling for this call: error or replace
 -names destinations
 #auto for all selected signals, or a raw-name-to-destination dictionary; vector output only\&.
 .TP
+-namespace name
+Destination override for this read; vector output only, relative to the caller, created if missing\&.
+.TP
 -output mode
 Override the handle output for this call: list or vector
 .TP
@@ -388,7 +396,9 @@ Index of the plot, optional\&.
 \fBDescription\fR
 .PP
 Options do not change the handle defaults\&. Vector naming, types, collision handling and ownership follow the
-single-vector command\&. All selected data is decoded before any destination data is replaced\&.
+single-vector command\&. Relative -namespace resolves against the read caller and creates missing parents\&.
+Empty namespaces are rejected\&. Fully qualified destinations override -namespace; their parent must exist\&.
+RBC expands a final #auto component in the selected namespace\&. All selected data is decoded before any destination data is replaced\&.
 .PP
 Example:
 .PP
