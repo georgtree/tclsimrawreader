@@ -34,6 +34,10 @@ ruff::document $namespaces -format nroff -outdir $docDir -outfile tclsimrawreade
 extensions = [
     "sphinx.ext.githubpages",
 ]
+html_theme = "classic"
+html_theme_options = {
+    "stickysidebar": True,
+}
 from pygments.lexers.tcl import TclLexer
 from pygments.token import Operator
 

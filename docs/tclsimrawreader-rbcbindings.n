@@ -59,19 +59,21 @@ overrides\&. Closing the handle deletes neither the namespace nor its caller-own
 Raw names are preserved whenever they are safe literal RBC names\&. Balanced parentheses, underscores, periods,
 letters, digits, @ and single interior colons are retained\&. Vectors are created with -literal true, so
 numeric names such as v(1) or v(1)(2:4) are never interpreted as length/range specifications\&. Examples:
-.TS
-tab(|) box;
-l l.
-Raw name | Destination tail
-_
-time | time
-v(out) | v(out)
-v(1) | v(1)
-v_28out_29 | v_28out_29
-L2:flux | L2:flux
-v(a-b) | _raw_7628612D6229
-sub::node | _raw_7375623A3A6E6F6465
-.TE
+.PP
+.nf
+┌────────────┬─────────────────────────┐
+│ Raw name   │ Destination tail        │
+├────────────┼─────────────────────────┤
+│ time       │ time                    │
+│ v(out)     │ v(out)                  │
+│ v(1)       │ v(1)                    │
+│ v_28out_29 │ v_28out_29              │
+│ L2:flux    │ L2:flux                 │
+│ v(a-b)     │ _raw_7628612D6229       │
+│ sub::node  │ _raw_7375623A3A6E6F6465 │
+└────────────┴─────────────────────────┘
+
+.fi
 .PP
 Names with unsupported characters, unbalanced parentheses, ::, a leading/trailing colon, or the reserved
 prefix _raw_ use a fallback: _raw_ followed by the uppercase hexadecimal UTF-8 bytes of the complete
