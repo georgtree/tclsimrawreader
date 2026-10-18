@@ -44,8 +44,39 @@
 <span id="r-tclsimrawreader"></span><span id="r-3a3atclsimrawreader"></span><h1>::tclsimrawreader<a class="headerlink" href="#tclsimrawreader" title="Link to this heading">¶</a></h1>
 <section id="commands">
 <span id="r-tclsimrawreader-commands"></span><span id="r-3a3atclsimrawreaderqzcommands"></span><h2>Commands<a class="headerlink" href="#commands" title="Link to this heading">¶</a></h2>
+<section id="configure">
+<span id="r-symbolqz3a3atclsimrawreader3a3aconfigure"></span><span id="index-1"></span><span id="index-0"></span><h3><code class="docutils literal notranslate"><span class="pre">configure</span></code><a class="headerlink" href="#configure" title="Link to this heading">¶</a></h3>
+<p>Queries or changes package-wide representation defaults in this Tcl interpreter.</p>
+<pre class="literal-block"><strong>configure</strong> <em>?option?</em>
+<strong>configure</strong> <em>?-output list|vector?</em></pre>
+<p class="rubric">Parameters</p>
+<dl class="field-list simple">
+<dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">mode</span></code><span class="colon">:</span></dt>
+<dd class="field-odd"><p>Default output representation: list or vector; initially list.</p>
+</dd>
+</dl>
+<p class="rubric">Description</p>
+<p>With no arguments, returns all settings as an option/value dictionary. With one option, returns its value.
+With option/value pairs, validates all settings before applying them and returns the complete configuration.
+Invalid options, invalid modes, or unavailable RBC support leave the configuration unchanged. Selecting
+vector mode requires an RBC-enabled build and a loadable rbc::vector package; list queries/settings do not
+load RBC. Defaults are independent in separate interpreters.</p>
+<p>New raw-file handles capture this default unless -output is supplied explicitly at creation.
+Existing handles retain their settings. Per-read overrides take precedence over the handle default.
+This public command is not namespace-exported; call it as ::tclsimrawreader::configure.
+Namespace selection, naming and collision policies are unaffected.</p>
+<p>Example:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>saved<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="k">]</span>
+<span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector
+<span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="o">-</span>output
+<span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="k">{</span><span class="o">*</span><span class="k">}</span><span class="nv">$saved</span>
+</pre></div>
+</div>
+<p class="rubric">Return value</p>
+<p>selected option value for a single-option query; otherwise all settings as a dictionary.</p>
+</section>
 <section id="openraw">
-<span id="r-symbolqz3a3atclsimrawreader3a3aopenraw"></span><span id="index-1"></span><span id="index-0"></span><h3><code class="docutils literal notranslate"><span class="pre">openraw</span></code><a class="headerlink" href="#openraw" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3aopenraw"></span><span id="index-3"></span><span id="index-2"></span><h3><code class="docutils literal notranslate"><span class="pre">openraw</span></code><a class="headerlink" href="#openraw" title="Link to this heading">¶</a></h3>
 <p>Open channel to provided .raw file, creates subcommand, parses header(s) information from the file.
 Every <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::openraw</span></code> returns a command (e.g. <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::s1</span></code>). The following
 subcommands operate on that file instance.</p>
@@ -62,7 +93,7 @@ subcommands operate on that file instance.</p>
 <dd class="field-odd"><p>Fixed destination namespace for all vector output; created with missing parents at open.</p>
 </dd>
 <dt class="field-even"><code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">mode</span></code><span class="colon">:</span></dt>
-<dd class="field-even"><p>Default output, <code class="docutils literal notranslate"><span class="pre">list</span></code> or <code class="docutils literal notranslate"><span class="pre">vector</span></code>; default is <code class="docutils literal notranslate"><span class="pre">list</span></code></p>
+<dd class="field-even"><p>Default output, <code class="docutils literal notranslate"><span class="pre">list</span></code> or <code class="docutils literal notranslate"><span class="pre">vector</span></code>; inherits the package configuration (initially <code class="docutils literal notranslate"><span class="pre">list</span></code>)</p>
 </dd>
 <dt class="field-odd"><code class="docutils literal notranslate"><span class="pre">filepath</span></code><span class="colon">:</span></dt>
 <dd class="field-odd"><p>Path to SPICE .raw file.</p>
@@ -82,7 +113,7 @@ namespace or output RBC vectors. The option also works with list defaults and la
 <p>command name to work with the file, references as <code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code> later</p>
 </section>
 <section id="rawfile">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile"></span><span id="index-3"></span><span id="index-2"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code><a class="headerlink" href="#rawfile" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile"></span><span id="index-5"></span><span id="index-4"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code><a class="headerlink" href="#rawfile" title="Link to this heading">¶</a></h3>
 <p>A
 command
 ensemble.</p>
@@ -106,7 +137,7 @@ ensemble.</p>
 <p>Refer to the documentation of each subcommand for details.</p>
 </section>
 <section id="rawfile-close">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20close"></span><span id="index-5"></span><span id="index-4"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code><a class="headerlink" href="#rawfile-close" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20close"></span><span id="index-7"></span><span id="index-6"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code><a class="headerlink" href="#rawfile-close" title="Link to this heading">¶</a></h3>
 <p>Closes channel to provided .raw file and deletes subcommand.</p>
 <pre class="literal-block"><strong>RAWFILE close</strong></pre>
 <p class="rubric">Description</p>
@@ -116,7 +147,7 @@ ensemble.</p>
 </div>
 </section>
 <section id="rawfile-header">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20header"></span><span id="index-7"></span><span id="index-6"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">header</span></code><a class="headerlink" href="#rawfile-header" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20header"></span><span id="index-9"></span><span id="index-8"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">header</span></code><a class="headerlink" href="#rawfile-header" title="Link to this heading">¶</a></h3>
 <p>Gets dictionary containing metadata from the header for the selected plot. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code>
 option, returns header from the first plot.</p>
 <pre class="literal-block"><strong>RAWFILE header</strong> <em>?-plot index?</em></pre>
@@ -156,7 +187,7 @@ option, returns header from the first plot.</p>
 <p>dictionary</p>
 </section>
 <section id="rawfile-names">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20names"></span><span id="index-9"></span><span id="index-8"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">names</span></code><a class="headerlink" href="#rawfile-names" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20names"></span><span id="index-11"></span><span id="index-10"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">names</span></code><a class="headerlink" href="#rawfile-names" title="Link to this heading">¶</a></h3>
 <p>Gets list of vectors’ (variables’) names defined in the header. If provided without <code class="docutils literal notranslate"><span class="pre">-plot</span></code> option, returns
 names from the first plot.</p>
 <pre class="literal-block"><strong>RAWFILE names</strong> <em>?-plot index?</em></pre>
@@ -176,7 +207,7 @@ names from the first plot.</p>
 <p>list</p>
 </section>
 <section id="rawfile-plots">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20plots"></span><span id="index-11"></span><span id="index-10"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">plots</span></code><a class="headerlink" href="#rawfile-plots" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20plots"></span><span id="index-13"></span><span id="index-12"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">plots</span></code><a class="headerlink" href="#rawfile-plots" title="Link to this heading">¶</a></h3>
 <p>Gets list of dictionaries containing information about the plots in the .raw file.</p>
 <pre class="literal-block"><strong>RAWFILE plots</strong></pre>
 <p class="rubric">Description</p>
@@ -195,7 +226,7 @@ names from the first plot.</p>
 <p>list of dictionaries</p>
 </section>
 <section id="rawfile-vector">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20vector"></span><span id="index-13"></span><span id="index-12"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vector</span></code><a class="headerlink" href="#rawfile-vector" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20vector"></span><span id="index-15"></span><span id="index-14"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vector</span></code><a class="headerlink" href="#rawfile-vector" title="Link to this heading">¶</a></h3>
 <p>Gets the values of specified vector (variable) for selected plot, in certain range if specified. If plot
 index is not provided, return values from the first plot.</p>
 <pre class="literal-block"><strong>RAWFILE vector</strong> <em>?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto? ?-namespace name?</em></pre>
@@ -248,7 +279,7 @@ RBC expands a final #auto component in the selected namespace. Overrides do not 
 <p>list of values in list mode, or fully qualified RBC vector command name in vector mode</p>
 </section>
 <section id="rawfile-vectors">
-<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20vectors"></span><span id="index-15"></span><span id="index-14"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vectors</span></code><a class="headerlink" href="#rawfile-vectors" title="Link to this heading">¶</a></h3>
+<span id="r-symbolqz3a3atclsimrawreader3a3arawfile20vectors"></span><span id="index-17"></span><span id="index-16"></span><h3><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vectors</span></code><a class="headerlink" href="#rawfile-vectors" title="Link to this heading">¶</a></h3>
 <p>Gets the values of specified vectors (variables) for selected plot (or all vectors), in certain range
 if specified. If plot index is not provided, return values from the first plot.</p>
 <pre class="literal-block"><strong>RAWFILE vectors</strong> <em>?-plot index? -all|namesList ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-names dictionary|#auto? ?-namespace name?</em></pre>
@@ -313,6 +344,7 @@ RBC expands a final #auto component in the selected namespace. All selected data
     <ul>
 <li><a class="reference internal" href="#">::tclsimrawreader</a><ul>
 <li><a class="reference internal" href="#commands">Commands</a><ul>
+<li><a class="reference internal" href="#configure"><code class="docutils literal notranslate"><span class="pre">configure</span></code></a></li>
 <li><a class="reference internal" href="#openraw"><code class="docutils literal notranslate"><span class="pre">openraw</span></code></a></li>
 <li><a class="reference internal" href="#rawfile"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code></a></li>
 <li><a class="reference internal" href="#rawfile-close"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code></a></li>

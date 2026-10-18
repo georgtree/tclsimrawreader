@@ -5,6 +5,10 @@
 .SH NAME
 tclsimrawreader - Commands in namespace tclsimrawreader
 .SH SYNOPSIS
+\fBconfigure\fP \fI?option?\fP
+.br
+\fBconfigure\fP \fI?-output list|vector?\fP
+.br
 \fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath\fP
 .br
 \fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
@@ -23,6 +27,53 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .br
 .SH ::TCLSIMRAWREADER
 .SH COMMANDS
+.PP
+.RS -4n
+\fBconfigure\fR (::tclsimrawreader)
+.RE
+.PP
+Queries or changes package-wide representation defaults in this Tcl interpreter\&.
+.RS 4n
+\fBconfigure\fP \fI?option?\fP
+.br
+\fBconfigure\fP \fI?-output list|vector?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+-output mode
+Default output representation: list or vector; initially list\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+With no arguments, returns all settings as an option/value dictionary\&. With one option, returns its value\&.
+With option/value pairs, validates all settings before applying them and returns the complete configuration\&.
+Invalid options, invalid modes, or unavailable RBC support leave the configuration unchanged\&. Selecting
+vector mode requires an RBC-enabled build and a loadable rbc::vector package; list queries/settings do not
+load RBC\&. Defaults are independent in separate interpreters\&.
+.PP
+New raw-file handles capture this default unless -output is supplied explicitly at creation\&.
+Existing handles retain their settings\&. Per-read overrides take precedence over the handle default\&.
+This public command is not namespace-exported; call it as ::tclsimrawreader::configure\&.
+Namespace selection, naming and collision policies are unaffected\&.
+.PP
+Example:
+.PP
+.RS 4n
+.nf
+set saved [::tclsimrawreader::configure]
+::tclsimrawreader::configure -output vector
+::tclsimrawreader::configure -output
+::tclsimrawreader::configure {*}$saved
+.fi
+.RE
+.PP
+\fBReturn value\fR
+.PP
+selected option value for a single-option query; otherwise all settings as a dictionary\&.
 .PP
 .RS -4n
 \fBopenraw\fR (::tclsimrawreader)
@@ -49,7 +100,7 @@ Default collision policy, error or replace; default is error
 Fixed destination namespace for all vector output; created with missing parents at open\&.
 .TP
 -output mode
-Default output, list or vector; default is list
+Default output, list or vector; inherits the package configuration (initially list)
 .TP
 filepath
 Path to SPICE \&.raw file\&.

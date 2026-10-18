@@ -57,7 +57,7 @@ make
 library is not linked. <code class="docutils literal notranslate"><span class="pre">--without-rbc</span></code> selects the default list-only build. Even an enabled build can load and
 read lists without RBC installed. <code class="docutils literal notranslate"><span class="pre">rbc::vector</span></code> is required only when vector output is selected. No Tk
 initialization is needed, although the installed RBC binary must have its system library dependencies available.</p>
-<p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. Defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code>.
+<p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. The initial defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code>; omitted -output at open time inherits the package configuration.
 Either option can be overridden for a single <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> call, without changing the handle defaults:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>raw<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>error<span class="w"> </span><span class="o">-</span>namespace<span class="w"> </span><span class="o">::</span>wave<span class="k">]</span>
 <span class="k">set</span><span class="w"> </span>signal<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)]</span>
@@ -186,6 +186,21 @@ counters. <code class="docutils literal notranslate"><span class="pre">auto</spa
 even with <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code>; explicit names retain the existing collision/type policy. Real and complex
 output, empty ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle
 and are owned by the caller. If publication fails, vectors created by that read are removed.</p>
+</section>
+<section id="package-defaults">
+<span id="r-rbcbindings-package-defaults"></span><span id="r-3a3arbcbindingsqzpackage20defaults"></span><h2>Package defaults<a class="headerlink" href="#package-defaults" title="Link to this heading">¶</a></h2>
+<p>Set representation defaults once after loading the package:</p>
+<div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nb">package</span><span class="w"> </span>require<span class="w"> </span>tclsimrawreader
+<span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector
+</pre></div>
+</div>
+<p>New handles inherit the output default unless their creation call supplies <code class="docutils literal notranslate"><span class="pre">-output</span></code> explicitly. Existing
+handles keep their settings; per-read overrides still take precedence.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span></code> to query all settings, or <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">-output</span></code> to query one.
+The all-settings dictionary can be restored with <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">{*}$saved</span></code>.
+Initial defaults remain <code class="docutils literal notranslate"><span class="pre">list</span></code>. Invalid requests and unavailable vector support leave settings unchanged.
+Configuration belongs to the current Tcl interpreter. The command is public but <strong>not namespace-exported</strong>,
+so wildcard imports cannot introduce a <code class="docutils literal notranslate"><span class="pre">configure</span></code> collision. Namespace, naming and collision policies are unchanged.</p>
 <hr class="docutils" />
 <p class="centered">
 <strong>Copyright (c) George Yashin</strong></p></section>
@@ -209,6 +224,7 @@ and are owned by the caller. If publication fails, vectors created by that read 
 </li>
 <li><a class="reference internal" href="#read-only-destinations">Read-only destinations</a></li>
 <li><a class="reference internal" href="#automatic-and-explicit-output-vector-names">Automatic and explicit output vector names</a></li>
+<li><a class="reference internal" href="#package-defaults">Package defaults</a></li>
 </ul>
 </li>
 </ul>

@@ -1,5 +1,70 @@
 #include "tclsimrawreader.h"
 
+/* Package defaults are interpreter-local, independent of command/handle lifetime.
+ * Setters validate the entire request, including RBC availability, before committing. */
+typedef struct PackageDefaults {
+    int output;
+} PackageDefaults;
+
+static void DeletePackageDefaults(void *data, Tcl_Interp *interp) {
+    (void)interp;
+    Tcl_Free((char *)data);
+}
+
+static PackageDefaults *GetPackageDefaults(Tcl_Interp *interp) {
+    PackageDefaults *defaults = (PackageDefaults *)Tcl_GetAssocData(interp, "tclsimrawreader::defaults", NULL);
+    if (!defaults) {
+        defaults = (PackageDefaults *)Tcl_Alloc(sizeof(*defaults));
+        memset(defaults, 0, sizeof(*defaults)); /* Initial modes remain list. */
+        Tcl_SetAssocData(interp, "tclsimrawreader::defaults", DeletePackageDefaults, defaults);
+    }
+    return defaults;
+}
+
+static Tcl_Obj *PackageDefaultsDict(Tcl_Interp *interp, const PackageDefaults *defaults) {
+    Tcl_Obj *result = Tcl_NewDictObj();
+    Tcl_DictObjPut(interp, result, Tcl_NewStringObj("-output", -1),
+                   Tcl_NewStringObj(defaults->output ? "vector" : "list", -1));
+    return result;
+}
+
+static int ConfigureCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    static const char *options[] = {"-output", NULL};
+    static const char *modes[] = {"list", "vector", NULL};
+    PackageDefaults *defaults = GetPackageDefaults(interp);
+    PackageDefaults candidate = *defaults;
+    int option, mode;
+    (void)clientData;
+    if (objc == 2) {
+        if (Tcl_GetIndexFromObj(interp, objv[1], options, "option", TCL_EXACT, &option) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        mode = defaults->output;
+        Tcl_SetObjResult(interp, Tcl_NewStringObj(modes[mode], -1));
+        return TCL_OK;
+    }
+    if (objc % 2 == 0) {
+        Tcl_WrongNumArgs(interp, 1, objv, "?option? ?value option value ...?");
+        return TCL_ERROR;
+    }
+    for (Tcl_Size i = 1; i < objc; i += 2) {
+        if (Tcl_GetIndexFromObj(interp, objv[i], options, "option", TCL_EXACT, &option) != TCL_OK ||
+            Tcl_GetIndexFromObj(interp, objv[i + 1], modes, "mode", TCL_EXACT, &mode) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        candidate.output = mode;
+    }
+    if (objc > 1) {
+        if ((candidate.output) && RawRbcInit(interp) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        *defaults = candidate;
+    }
+    Tcl_SetObjResult(interp, PackageDefaultsDict(interp, defaults));
+    return TCL_OK;
+}
+
+
 static const char *types[] = {"time",
                               "frequency",
                               "voltage",
@@ -5536,6 +5601,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     const char *name;
     RawDialect dialect;
     RawOutputOptions output = {0};
+    output.vectors = GetPackageDefaults(interp)->output;
     Tcl_Obj *namespaceOption = NULL;
     if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output, &namespaceOption) != TCL_OK) {
         return TCL_ERROR;
@@ -5756,6 +5822,7 @@ extern DLLEXPORT int Tclsimrawreader_Init(Tcl_Interp *interp) {
     if (Tcl_Eval(interp, "namespace eval ::tclsimrawreader:: {}") != TCL_OK) {
         return TCL_ERROR;
     }
+    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::configure", ConfigureCmd, NULL, NULL);
     Tcl_CreateObjCommand2(interp, "::tclsimrawreader::openraw", (Tcl_ObjCmdProc2 *)RawOpenCmd, NULL, NULL);
     /* Provide the current package */
     if (Tcl_PkgProvideEx(interp, PACKAGE_NAME, PACKAGE_VERSION, NULL) != TCL_OK) {

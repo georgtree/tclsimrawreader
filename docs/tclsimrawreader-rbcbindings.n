@@ -25,7 +25,7 @@ library is not linked\&. --without-rbc selects the default list-only build\&. Ev
 read lists without RBC installed\&. rbc::vector is required only when vector output is selected\&. No Tk
 initialization is needed, although the installed RBC binary must have its system library dependencies available\&.
 .PP
-Set handle defaults with -output list|vector and -ifexists error|replace\&. Defaults are list and error\&.
+Set handle defaults with -output list|vector and -ifexists error|replace\&. The initial defaults are list and error; omitted -output at open time inherits the package configuration\&.
 Either option can be overridden for a single vector or vectors call, without changing the handle defaults:
 .PP
 .RS 4n
@@ -145,6 +145,25 @@ counters\&. auto without # is an ordinary explicit name\&.  Repeated automatic r
 even with -ifexists replace; explicit names retain the existing collision/type policy\&. Real and complex
 output, empty ranges, and lack of mapped Tcl arrays behave as before\&. Returned vectors outlive the raw handle
 and are owned by the caller\&. If publication fails, vectors created by that read are removed\&.
+.SH "PACKAGE DEFAULTS"
+.PP
+Set representation defaults once after loading the package:
+.PP
+.RS 4n
+.nf
+package require tclsimrawreader
+::tclsimrawreader::configure -output vector
+.fi
+.RE
+.PP
+New handles inherit the output default unless their creation call supplies -output explicitly\&. Existing
+handles keep their settings; per-read overrides still take precedence\&.
+.PP
+Use ::tclsimrawreader::configure to query all settings, or ::tclsimrawreader::configure -output to query one\&.
+The all-settings dictionary can be restored with ::tclsimrawreader::configure {*}$saved\&.
+Initial defaults remain list\&. Invalid requests and unavailable vector support leave settings unchanged\&.
+Configuration belongs to the current Tcl interpreter\&. The command is public but \fBnot namespace-exported\fP,
+so wildcard imports cannot introduce a configure collision\&. Namespace, naming and collision policies are unchanged\&.
 
 
 .SH SEE ALSO

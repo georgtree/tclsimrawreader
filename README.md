@@ -124,3 +124,21 @@ not write to the configured system prefix. `DIST_ROOT` and `DIST_NAME` may be ov
 directory and name; `DIST_NAME` must be a single directory name. Run `dist-clean` separately, not alongside `dist`
 or `dist-zip` in the same parallel make invocation.
 
+
+## Package defaults
+
+Set representation defaults once after loading the package:
+
+```tcl
+package require tclsimrawreader
+::tclsimrawreader::configure -output vector
+```
+
+New handles inherit the output default unless their creation call supplies `-output` explicitly. Existing
+handles keep their settings; per-read overrides still take precedence.
+
+Use `::tclsimrawreader::configure` to query all settings, or `::tclsimrawreader::configure -output` to query one.
+The all-settings dictionary can be restored with `::tclsimrawreader::configure {*}$saved`.
+Initial defaults remain `list`. Invalid requests and unavailable vector support leave settings unchanged.
+Configuration belongs to the current Tcl interpreter. The command is public but **not namespace-exported**,
+so wildcard imports cannot introduce a `configure` collision. Namespace, naming and collision policies are unchanged.

@@ -568,4 +568,88 @@ Values:
     } -result {1 1}
 }
 
+
+testConstraint defaultsVectors $haveVectors
+testConstraint defaultsNoVectors [expr {!$haveVectors}]
+
+# Public package configuration is intentionally not namespace-exported.
+test defaults-query {initial settings and single-option queries} -body {
+    list [::tclsimrawreader::configure] [::tclsimrawreader::configure -output]
+} -result {{-output list} list}
+
+test defaults-validation {invalid requests do not partially change configuration} -body {
+    set saved [::tclsimrawreader::configure]
+    set errors {}
+    foreach args {{-output vector -unknown list} {-output invalid} {-output list -output} {-unknown}} {
+        lappend errors [catch {::tclsimrawreader::configure {*}$args}]
+        if {[::tclsimrawreader::configure] ne $saved} {
+            error {partial configuration change}
+        }
+    }
+    set errors
+} -cleanup {::tclsimrawreader::configure {*}$saved} -result {1 1 1 1}
+
+test defaults-not-exported {wildcard imports do not import configure} -body {
+    namespace eval ::defaultsImportTest {namespace import ::tclsimrawreader::*}
+    list [info commands ::tclsimrawreader::configure] [info commands ::defaultsImportTest::configure]
+} -cleanup {namespace delete ::defaultsImportTest} -result {::tclsimrawreader::configure {}}
+
+test defaults-set-restore {set returns all settings; returned dictionary restores them} -constraints defaultsVectors\
+        -body {
+    set saved [::tclsimrawreader::configure]
+    set changed [::tclsimrawreader::configure -output vector]
+    set query [::tclsimrawreader::configure -output]
+    set restored [::tclsimrawreader::configure {*}$saved]
+    list $changed $query [expr {$restored eq $saved}]
+} -cleanup {::tclsimrawreader::configure {*}$saved} -result {{-output vector} vector 1}
+
+test defaults-interpreters {a fresh interpreter has independent list defaults} -constraints defaultsVectors -body {
+    set saved [::tclsimrawreader::configure]
+    ::tclsimrawreader::configure -output vector
+    set library {}
+    foreach loaded [info loaded] {
+        if {[string equal -nocase [lindex $loaded 1] tclsimrawreader]} {
+            set library [lindex $loaded 0]
+            break
+        }
+    }
+    interp create defaultsChild
+    defaultsChild eval [list load $library]
+    defaultsChild eval {::tclsimrawreader::configure -output list}
+    list [defaultsChild eval {::tclsimrawreader::configure -output}] [::tclsimrawreader::configure -output]\
+            [defaultsChild eval {package provide rbc::vector}]
+} -cleanup {
+    catch {interp delete defaultsChild}
+    ::tclsimrawreader::configure {*}$saved
+} -result {list vector {}}
+
+test defaults-unavailable {unavailable vector support leaves all defaults unchanged} -constraints defaultsNoVectors\
+        -body {
+    set saved [::tclsimrawreader::configure]
+    list [catch {::tclsimrawreader::configure -output vector}] [expr {[::tclsimrawreader::configure] eq $saved}]
+} -cleanup {::tclsimrawreader::configure {*}$saved} -result {1 1}
+
+test defaults-handle-output {new handles capture defaults; existing handles and explicit overrides remain stable} \
+        -constraints defaultsVectors -body {
+    set saved [::tclsimrawreader::configure]
+    set old [::tclsimrawreader::openraw $dcPath]
+    ::tclsimrawreader::configure -output vector
+    set vec [::tclsimrawreader::openraw $dcPath -namespace ::defaultsRaw]
+    set plain [::tclsimrawreader::openraw $dcPath -output list]
+    ::tclsimrawreader::configure -output list
+    set latest [::tclsimrawreader::openraw $dcPath]
+    set expected [$old vector v(out)]
+    set one [$vec vector v(out) -name one]
+    set all [$vec vectors {v(out) v(in)} -names #auto]
+    list [expr {[$one range 0 end] eq $expected}] [expr {[[dict get $all v(out)] range 0 end] eq $expected}]\
+            [expr {[$plain vector v(out)] eq $expected}] [expr {[$latest vector v(out)] eq $expected}]\
+            [expr {[$vec vector v(out) -output list] eq $expected}]
+} -cleanup {
+    foreach r [list $old $vec $plain $latest] {
+        catch {$r close}
+    }
+    catch {namespace delete ::defaultsRaw}
+    ::tclsimrawreader::configure {*}$saved
+} -result {1 1 1 1 1}
+
 cleanupTests

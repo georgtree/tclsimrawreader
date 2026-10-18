@@ -160,6 +160,25 @@ subdirectories inside that prefix are preserved\&. DESTDIR is not included in ar
 not write to the configured system prefix\&. DIST_ROOT and DIST_NAME may be overridden to choose the archive output
 directory and name; DIST_NAME must be a single directory name\&. Run dist-clean separately, not alongside dist
 or dist-zip in the same parallel make invocation\&.
+.SH "PACKAGE DEFAULTS"
+.PP
+Set representation defaults once after loading the package:
+.PP
+.RS 4n
+.nf
+package require tclsimrawreader
+::tclsimrawreader::configure -output vector
+.fi
+.RE
+.PP
+New handles inherit the output default unless their creation call supplies -output explicitly\&. Existing
+handles keep their settings; per-read overrides still take precedence\&.
+.PP
+Use ::tclsimrawreader::configure to query all settings, or ::tclsimrawreader::configure -output to query one\&.
+The all-settings dictionary can be restored with ::tclsimrawreader::configure {*}$saved\&.
+Initial defaults remain list\&. Invalid requests and unavailable vector support leave settings unchanged\&.
+Configuration belongs to the current Tcl interpreter\&. The command is public but \fBnot namespace-exported\fP,
+so wildcard imports cannot introduce a configure collision\&. Namespace, naming and collision policies are unchanged\&.
 
 
 .SH SEE ALSO
