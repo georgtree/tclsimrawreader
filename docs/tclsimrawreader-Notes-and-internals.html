@@ -366,7 +366,7 @@ point-offset index built at open time.</p>
 </div>
 <p>The main open path is:</p>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>RawOpenCmd
-    RawParseOpenArgs
+    RawReadOptions
     Tcl_FSOpenFileChannel
     Tcl_SetChannelOption -translation binary
     DetectEncoding
@@ -381,7 +381,7 @@ point-offset index built at open time.</p>
         if DATA_VALUES:
             ASCII open path
 
-    Tcl_CreateObjCommand2 -&gt; RawFileObjCmd
+    Tcl_CreateObjCommand2 -&gt; HandleCmd -&gt; Tcl Dispatch -&gt; NativeCall -&gt; RawFileObjCmd
 </pre></div>
 </div>
 <p><code class="docutils literal notranslate"><span class="pre">ReadHeader()</span></code> parses only the text header and stops after consuming either the <code class="docutils literal notranslate"><span class="pre">Binary:</span></code> or <code class="docutils literal notranslate"><span class="pre">Values:</span></code> marker.
@@ -737,7 +737,7 @@ vector.</p>
     vector subcommand
         RawSelectPlotFromArgs
         RawPlotFindVariable
-        RawParseRange
+        Range bounds checks in RawFileObjCmdImpl
         RawPlotVectorToObj
             RawPlotReadVectorsToObj
 </pre></div>
@@ -750,7 +750,7 @@ vector.</p>
         RawSelectPlotFromArgs
         RawPlotResolveVariableList
             or RawPlotResolveAllVariables
-        RawParseRange
+        Range bounds checks in RawFileObjCmdImpl
         RawPlotReadVectorsToObj
 </pre></div>
 </div>
@@ -881,10 +881,27 @@ Read time:
 <p>LTspice binary files use physical data size to infer storage layout and point count.</p>
 <p>LTspice stepped files are normalized into ordinary indexed plots, so the rest of the reader can use the same
 vector-reading path for all formats.</p>
+</section>
+</section>
+<section id="tcl-and-c-interface-boundary">
+<span id="r-notes-and-internals-tcl-and-c-interface-boundary"></span><span id="r-3a3anotes20and20internalsqztcl20and20c20interface20boundary"></span><h2>Tcl and C interface boundary<a class="headerlink" href="#tcl-and-c-interface-boundary" title="Link to this heading">¶</a></h2>
+<p>Public argument parsing, interactive help and command documentation live in the
+package’s Tcl source. Wrappers pass normalized dictionaries to private native
+commands. The native engine keeps semantic checks, data buffers, event handling
+and RBC publication; numeric samples are not copied through Tcl merely to parse
+options.</p>
+<p>Each returned handle remains a native command and owns its original deletion
+callback. It dispatches to the real RAWFILE Tcl procedures, which call the native
+engine in the original caller’s frame. Renaming or deleting the handle therefore
+retains the existing ownership rules, and relative namespaces still resolve
+against the caller. No second TclOO object or hidden lifetime-owning handle is
+introduced.</p>
+<p>Wrappers call the fixed native argparse directly with -helplevel 1. Help prints
+and returns from the current wrapper without running its native operation. The
+argparse help-return fix is required; no local compatibility helper is used.</p>
 <hr class="docutils" />
 <p class="centered">
 <strong>Copyright (c) George Yashin</strong></p></section>
-</section>
 </section>
 
 
@@ -944,6 +961,7 @@ vector-reading path for all formats.</p>
 <li><a class="reference internal" href="#summary">Summary</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#tcl-and-c-interface-boundary">Tcl and C interface boundary</a></li>
 </ul>
 </li>
 </ul>

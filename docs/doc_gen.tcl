@@ -7,20 +7,19 @@ set sourceDir [file join $docDir ..]
 source [file join $docDir startPage.ruff]
 source [file join $docDir rbcBindings.ruff]
 source [file join $docDir notesAndInternals.ruff]
-source [file join $docDir tclsimrawreader.ruff]
 
 set packageVersion [package provide tclsimrawreader]
 if {$packageVersion eq {}} {
     return -code error "Package version is empty"
 }
-set title "Tcl NgspiceTclBridge package"
+set title "Tcl tclsimrawreader package"
 
 set commonSphinx [list -title $title -sortnamespaces false -preamble $startPage -pagesplit namespace -recurse false\
-                    -includesource false -pagesplit namespace -autopunctuate true -compact false -includeprivate false\
+                    -includesource false -pagesplit namespace -autopunctuate true -compact false -includeprivate false -excludeprocs {^(Native.*|Dispatch)$}\
                     -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                     -copyright "George Yashin" {*}$::argv]
 set commonNroff [list -title $title -sortnamespaces false -preamble $startPage -pagesplit namespace -recurse false\
-                         -pagesplit namespace -autopunctuate true -compact false -includeprivate false\
+                         -pagesplit namespace -autopunctuate true -compact false -includeprivate false -excludeprocs {^(Native.*|Dispatch)$}\
                          -product tclsimrawreader -diagrammer "ditaa --border-width 1" -version $packageVersion\
                          -copyright "George Yashin" {*}$::argv]
 

@@ -1,86 +1,5 @@
 #include "tclsimrawreader.h"
 
-/* Package defaults are interpreter-local, independent of command/handle lifetime.
- * Setters validate the entire request, including RBC availability, before committing. */
-typedef struct PackageDefaults {
-    int output, replace;
-} PackageDefaults;
-
-static void DeletePackageDefaults(void *data, Tcl_Interp *interp) {
-    (void)interp;
-    Tcl_Free((char *)data);
-}
-
-static PackageDefaults *GetPackageDefaults(Tcl_Interp *interp) {
-    PackageDefaults *defaults = (PackageDefaults *)Tcl_GetAssocData(interp, "tclsimrawreader::defaults", NULL);
-    if (!defaults) {
-        defaults = (PackageDefaults *)Tcl_Alloc(sizeof(*defaults));
-        memset(defaults, 0, sizeof(*defaults)); /* Initial modes are list; collision policy is error. */
-        Tcl_SetAssocData(interp, "tclsimrawreader::defaults", DeletePackageDefaults, defaults);
-    }
-    return defaults;
-}
-
-static Tcl_Obj *PackageDefaultsDict(Tcl_Interp *interp, const PackageDefaults *defaults) {
-    Tcl_Obj *result = Tcl_NewDictObj();
-    Tcl_DictObjPut(interp, result, Tcl_NewStringObj("-output", -1),
-                   Tcl_NewStringObj(defaults->output ? "vector" : "list", -1));
-    Tcl_DictObjPut(interp, result, Tcl_NewStringObj("-ifexists", -1),
-                   Tcl_NewStringObj(defaults->replace ? "replace" : "error", -1));
-    return result;
-}
-
-static int ConfigureCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
-    static const char *options[] = {"-output", "-ifexists", NULL};
-    static const char *modes[] = {"list", "vector", NULL};
-    static const char *policies[] = {"error", "replace", NULL};
-    PackageDefaults *defaults = GetPackageDefaults(interp);
-    PackageDefaults candidate = *defaults;
-    int option, mode;
-    (void)clientData;
-    if (objc == 2) {
-        if (Tcl_GetIndexFromObj(interp, objv[1], options, "option", TCL_EXACT, &option) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (option == 1) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj(policies[defaults->replace], -1));
-            return TCL_OK;
-        }
-        mode = defaults->output;
-        Tcl_SetObjResult(interp, Tcl_NewStringObj(modes[mode], -1));
-        return TCL_OK;
-    }
-    if (objc % 2 == 0) {
-        Tcl_WrongNumArgs(interp, 1, objv, "?option? ?value option value ...?");
-        return TCL_ERROR;
-    }
-    for (Tcl_Size i = 1; i < objc; i += 2) {
-        if (Tcl_GetIndexFromObj(interp, objv[i], options, "option", TCL_EXACT, &option) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (option == 1) {
-            if (Tcl_GetIndexFromObj(interp, objv[i + 1], policies, "collision policy", TCL_EXACT, &mode) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            candidate.replace = mode;
-        } else {
-            if (Tcl_GetIndexFromObj(interp, objv[i + 1], modes, "mode", TCL_EXACT, &mode) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            candidate.output = mode;
-        }
-    }
-    if (objc > 1) {
-        if ((candidate.output) && RawRbcInit(interp) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        *defaults = candidate;
-    }
-    Tcl_SetObjResult(interp, PackageDefaultsDict(interp, defaults));
-    return TCL_OK;
-}
-
-
 static const char *types[] = {"time",
                               "frequency",
                               "voltage",
@@ -222,13 +141,10 @@ static int RawLtspiceAppendAsciiSegmentPlots(Tcl_Interp *interp, RawFile *rf, Ra
                                              Tcl_WideInt *allPointOffsets, Tcl_Size totalPoints, Tcl_Size *starts,
                                              Tcl_Size *counts, Tcl_Size numSteps);
 static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawPlot *basePlot, Tcl_Size declaredPoints);
-static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output, Tcl_Obj **namespaceOption);
+static Tcl_Obj *Arg(Tcl_Obj *args, const char *key);
+static int CheckArgs(Tcl_Interp *interp, Tcl_Obj *args, const char *required);
+static int Modes(Tcl_Interp *interp, Tcl_Obj *args, int *output, int *replace);
 static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_Size *plotIndexPtr);
-static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
-                         Tcl_Size *fromPtr, Tcl_Size *countPtr, RawOutputOptions *output);
-static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
-                                 Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr);
 static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
 static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]);
 
@@ -3328,6 +3244,33 @@ static int RawPlotVectorToObj(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tc
 
 //** LTspice binary dialect support
 //***  RawGetChannelSize function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawGetChannelSize --
+ *
+ *      Gets the total byte size of an open raw-file channel.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp      - Interpreter used for error reporting.
+ *      Tcl_Channel chan        - Channel whose size is queried.
+ *      Tcl_WideInt *sizePtr    - Output location for the channel size.
+ *
+ * Results:
+ *      Returns TCL_OK if the channel size is obtained successfully.
+ *      Returns TCL_ERROR if the current offset, end offset, or seek operation fails.
+ *
+ * Side Effects:
+ *      Temporarily seeks chan to the end of the file.
+ *      Restores the original channel position on success.
+ *      Stores the file size in *sizePtr on success.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      The returned size is a byte offset suitable for binary raw-file calculations.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
 static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *sizePtr) {
     Tcl_WideInt oldPos;
     Tcl_WideInt endPos;
@@ -3354,31 +3297,33 @@ static int RawGetChannelSize(Tcl_Interp *interp, Tcl_Channel chan, Tcl_WideInt *
     return TCL_OK;
 }
 
-//***  RawGetChannelSize function
+//***  RawLtspiceCandidateStrides function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawGetChannelSize --
+ * RawLtspiceCandidateStrides --
  *
- *      Gets the total byte size of an open raw-file channel.
+ *      Computes candidate byte strides per point for LTspice binary data.
+ *      Real mixed-precision storage uses an eight-byte first variable and four bytes for each remaining variable.
+ *      Real all-double storage uses eight bytes per variable.
+ *      Complex storage uses sixteen bytes per variable, giving identical strides for both candidates.
  *
  * Parameters:
- *      Tcl_Interp *interp      - Interpreter used for error reporting.
- *      Tcl_Channel chan        - Channel whose size is queried.
- *      Tcl_WideInt *sizePtr    - Output location for the channel size.
+ *      Tcl_Interp *interp         - Interpreter used for error reporting.
+ *      RawHeader *h               - Parsed header containing the variable count and complex-data flag.
+ *      Tcl_Size *mixedStridePtr   - Output location for the mixed-precision point stride in bytes.
+ *      Tcl_Size *doubleStridePtr  - Output location for the all-double point stride in bytes.
  *
  * Results:
- *      Returns TCL_OK if the channel size is obtained successfully.
- *      Returns TCL_ERROR if the current offset, end offset, or seek operation fails.
+ *      Returns TCL_OK if both candidate strides are computed successfully.
+ *      Returns TCL_ERROR if the variable count is nonpositive or a stride calculation overflows.
  *
  * Side Effects:
- *      Temporarily seeks chan to the end of the file.
- *      Restores the original channel position on success.
- *      Stores the file size in *sizePtr on success.
+ *      Stores the candidate strides in the supplied output locations on success.
  *      Sets the interpreter result on failure.
  *
  * Notes:
- *      The returned size is a byte offset suitable for binary raw-file calculations.
+ *      Computes candidate layouts only; does not inspect file data or select the actual storage layout.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
@@ -4697,52 +4642,67 @@ static int RawLtspiceAppendSplitAsciiPlots(Tcl_Interp *interp, RawFile *rf, RawP
 }
 
 //** Tcl command argument parsing
-//***  RawParseOutputOption function
+//***  RawReadOptions function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawParseOutputOption --
+ * RawReadOptions --
  *
- *      Parses one -output or -ifexists value into caller-owned options. Returns TCL_OK on success or TCL_ERROR
- *      with a diagnostic. No package is loaded and no vectors are changed during option parsing.
+ *      Extracts per-call output settings from a normalized argument dictionary.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      Tcl_Obj *args            - Validated argument dictionary.
+ *      RawOutputOptions *output - Caller-owned options initialized from the applicable defaults.
+ *
+ * Results:
+ *      Returns TCL_OK on success or TCL_ERROR if an output mode or collision policy is invalid.
+ *
+ * Side Effects:
+ *      Stores borrowed name, names, and namespace objects in the output structure.
+ *      Missing naming or namespace keys set the corresponding fields to NULL.
+ *      Updates output and collision settings when present; omitted settings retain their existing values.
+ *      Does not load RBC or create vectors.
+ *
+ * Notes:
+ *      The dictionary must remain alive while its borrowed values are used.
+ *      The output structure may be partially updated on failure.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawParseOutputOption(Tcl_Interp *interp, const char *option, Tcl_Obj *valueObj, RawOutputOptions *output) {
-    const char *value = Tcl_GetString(valueObj);
-    if (strcmp(option, "-output") == 0) {
-        if (strcmp(value, "list") == 0) {
-            output->vectors = 0;
-        } else if (strcmp(value, "vector") == 0) {
-            output->vectors = 1;
-        } else {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("bad -output value \"%s\": must be list or vector", value));
-            return TCL_ERROR;
-        }
-    } else if (strcmp(option, "-name") == 0) {
-        output->name = valueObj;
-    } else if (strcmp(option, "-names") == 0) {
-        output->names = valueObj;
-    } else if (strcmp(option, "-namespace") == 0) {
-        output->namespaceOption = valueObj;
-    } else {
-        if (strcmp(value, "error") == 0) {
-            output->replace = 0;
-        } else if (strcmp(value, "replace") == 0) {
-            output->replace = 1;
-        } else {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("bad -ifexists value \"%s\": must be error or replace", value));
-            return TCL_ERROR;
-        }
-    }
-    return TCL_OK;
+static int RawReadOptions(Tcl_Interp *interp, Tcl_Obj *args, RawOutputOptions *output) {
+    output->name = Arg(args, "name");
+    output->names = Arg(args, "names");
+    output->namespaceOption = Arg(args, "namespace");
+    return Modes(interp, args, &output->vectors, &output->replace);
 }
 
 //***  ResolveOutputNamespace function
 /*
  *----------------------------------------------------------------------------------------------------------------------
- * ResolveOutputNamespace -- Resolve an explicit destination relative to the caller and create missing parents.
- * Returns a retained, canonical namespace name, or NULL with an error. The namespace is not owned by the handle.
+ *
+ * ResolveOutputNamespace --
+ *
+ *      Resolves an explicit output namespace and creates it if missing.
+ *      Relative names are resolved against the interpreter's current namespace; fully qualified names are used directly.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter in which to resolve or create the namespace.
+ *      Tcl_Obj *option    - Non-NULL object containing the requested namespace name.
+ *
+ * Results:
+ *      Returns a new Tcl string object containing the namespace's canonical fully qualified name,
+ *      with reference count one. The caller must release it with Tcl_DecrRefCount.
+ *      Returns NULL if the name is empty or namespace creation fails.
+ *
+ * Side Effects:
+ *      Creates the requested namespace and any missing parent namespaces.
+ *      Sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Does not change the current namespace or create vectors.
+ *      Releasing the returned object does not delete the namespace.
+ *
  *----------------------------------------------------------------------------------------------------------------------
  */
 static Tcl_Obj *ResolveOutputNamespace(Tcl_Interp *interp, Tcl_Obj *option) {
@@ -4769,87 +4729,37 @@ static Tcl_Obj *ResolveOutputNamespace(Tcl_Interp *interp, Tcl_Obj *option) {
     return result;
 }
 
-//***  RawParseOpenArgs function
+//***  RawValidateNames function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
- * RawParseOpenArgs --
+ * RawValidateNames --
  *
- *      Parses output/collision defaults and a borrowed -namespace option, before or after the file name.
- *
- *      Parses arguments for the openraw command.
+ *      Checks that naming and namespace options are compatible with the requested output and selection.
+ *      Validates naming-map keys before reading data or publishing vectors.
  *
  * Parameters:
- *      Tcl_Interp *interp        - Interpreter used for error reporting.
- *      Tcl_Size objc             - Number of command arguments.
- *      Tcl_Obj *const objv[]     - Command argument objects.
- *      RawDialect *dialectPtr    - Output location for the selected raw-file dialect.
- *      Tcl_Obj **fileNameObjPtr  - Output location for the file name object.
+ *      Tcl_Interp *interp       - Interpreter used for error reporting.
+ *      RawOutputOptions *output - Output and naming settings to validate.
+ *      int dictionary           - Nonzero for vectors output; zero for a single vector.
+ *      RawPlot *plot            - Plot containing the selected variables.
+ *      Tcl_Size n               - Number of selected variables.
+ *      Tcl_Size *indexes        - Validated variable indexes within the plot.
  *
  * Results:
- *      Returns TCL_OK if the arguments are parsed successfully.
- *      Returns TCL_ERROR if the argument count is invalid or the dialect name is unknown.
+ *      Returns TCL_OK if the options are compatible and every naming-map key identifies a selected variable.
+ *      Returns TCL_ERROR otherwise.
  *
  * Side Effects:
- *      Stores the selected dialect in *dialectPtr.
- *      Stores the file name object in *fileNameObjPtr.
  *      Sets the interpreter result on failure.
+ *      Does not load RBC, create namespaces, or modify vectors.
  *
  * Notes:
- *      If -dialect is omitted, RAW_DIALECT_GENERIC is used.
+ *      The -names value may be #auto instead of a dictionary.
+ *      Destination-name validity and collisions are checked separately during vector publication.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawParseOpenArgs(Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[], RawDialect *dialectPtr,
-                            Tcl_Obj **fileNameObjPtr, RawOutputOptions *output, Tcl_Obj **namespaceOption) {
-    RawDialect dialect = RAW_DIALECT_GENERIC;
-    Tcl_Obj *fileNameObj = NULL;
-    for (Tcl_Size i = 1; i < objc; i++) {
-        const char *option = Tcl_GetString(objv[i]);
-        if (strcmp(option, "--") == 0 && i + 2 == objc && fileNameObj == NULL) {
-            fileNameObj = objv[++i];
-        } else if (strcmp(option, "-dialect") == 0 || strcmp(option, "-output") == 0 ||
-                   strcmp(option, "-ifexists") == 0 || strcmp(option, "-namespace") == 0) {
-            if (++i >= objc) {
-                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
-                return TCL_ERROR;
-            }
-            if (strcmp(option, "-dialect") == 0) {
-                const char *value = Tcl_GetString(objv[i]);
-                if (strcmp(value, "generic") == 0) {
-                    dialect = RAW_DIALECT_GENERIC;
-                } else if (strcmp(value, "ltspice") == 0) {
-                    dialect = RAW_DIALECT_LTSPICE;
-                } else {
-                    Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw dialect \"%s\"", value));
-                    return TCL_ERROR;
-                }
-            } else if (strcmp(option, "-namespace") == 0) {
-                *namespaceOption = objv[i];
-            } else if (RawParseOutputOption(interp, option, objv[i], output) != TCL_OK) {
-                return TCL_ERROR;
-            }
-        } else if (fileNameObj == NULL) {
-            fileNameObj = objv[i];
-        } else {
-            Tcl_WrongNumArgs(interp, 1, objv,
-                             "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? ?-namespace "
-                             "name? fileName");
-            return TCL_ERROR;
-        }
-    }
-    if (fileNameObj == NULL) {
-        Tcl_WrongNumArgs(
-            interp, 1, objv,
-            "?-dialect generic|ltspice? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? fileName");
-        return TCL_ERROR;
-    }
-    *dialectPtr = dialect;
-    *fileNameObjPtr = fileNameObj;
-    return TCL_OK;
-}
-
-/* Validate per-read naming independently of RBC availability and before publication. */
 static int RawValidateNames(Tcl_Interp *interp, RawOutputOptions *output, int dictionary, RawPlot *plot, Tcl_Size n,
                             Tcl_Size *indexes) {
     if (output->namespaceOption && !output->vectors) {
@@ -4858,7 +4768,7 @@ static int RawValidateNames(Tcl_Interp *interp, RawOutputOptions *output, int di
     }
     if (!output->name && !output->names) {
         return TCL_OK;
-    }        
+    }
     if (!output->vectors || (dictionary ? output->name != NULL : output->names != NULL)) {
         Tcl_SetObjResult(
             interp,
@@ -4871,13 +4781,13 @@ static int RawValidateNames(Tcl_Interp *interp, RawOutputOptions *output, int di
         int done;
         if (Tcl_DictObjFirst(interp, output->names, &search, &key, &value, &done) != TCL_OK) {
             return TCL_ERROR;
-        }            
+        }
         for (; !done; Tcl_DictObjNext(&search, &key, &value, &done)) {
             Tcl_Size i;
             for (i = 0; i < n; i++) {
                 if (strcmp(Tcl_GetString(key), plot->header.variables[indexes[i]].name) == 0) {
                     break;
-                }                    
+                }
             }
             if (i == n) {
                 Tcl_SetObjResult(interp,
@@ -4930,153 +4840,258 @@ static int RawParsePlotIndex(Tcl_Interp *interp, RawFile *rf, Tcl_Obj *obj, Tcl_
     return TCL_OK;
 }
 
-//***  RawParseRange function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawParseRange --
- *
- *      Also accepts trailing -output and -ifexists overrides in the caller-owned copy of the handle defaults.
- *
- *      Parses and validates optional -from and -count point-range arguments.
- *
- * Parameters:
- *      Tcl_Interp *interp    - Interpreter used for numeric conversion and error reporting.
- *      RawPlot *plot         - Selected plot whose header supplies the valid point range.
- *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - Command argument objects.
- *      Tcl_Size firstOpt     - Index where range-option parsing begins.
- *      Tcl_Size *fromPtr     - Output first point index.
- *      Tcl_Size *countPtr    - Output point count.
- *
- * Results:
- *      Returns TCL_OK if the range is parsed and valid.
- *      Returns TCL_ERROR on missing option value, invalid integer, negative value, unknown option, or out-of-range
- * span.
- *
- * Side Effects:
- *      Writes the parsed range to *fromPtr and *countPtr on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      If -from is omitted, it defaults to 0.
- *      If -count is omitted, it extends from -from to the end of the plot.
- *      The effective range is half-open: [from, from + count), so count 0 is valid.
- *      A countSet flag distinguishes omitted -count from explicit "-count 0".
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawParseRange(Tcl_Interp *interp, RawPlot *plot, Tcl_Size objc, Tcl_Obj *const objv[], Tcl_Size firstOpt,
-                         Tcl_Size *fromPtr, Tcl_Size *countPtr, RawOutputOptions *output) {
-    RawHeader *h = &plot->header;
-    Tcl_Size from = 0;
-    Tcl_Size count = 0;
-    int countSet = 0;
-
-    for (Tcl_Size i = firstOpt; i < objc; i += 2) {
-        const char *opt;
-        Tcl_WideInt wide;
-        if (i + 1 >= objc) {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", Tcl_GetString(objv[i])));
-            return TCL_ERROR;
-        }
-        opt = Tcl_GetString(objv[i]);
-        if (strcmp(opt, "-output") == 0 || strcmp(opt, "-ifexists") == 0 || strcmp(opt, "-name") == 0 ||
-            strcmp(opt, "-names") == 0 || strcmp(opt, "-namespace") == 0) {
-            if (RawParseOutputOption(interp, opt, objv[i + 1], output) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            continue;
-        }
-        if (Tcl_GetWideIntFromObj(interp, objv[i + 1], &wide) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (wide < 0) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("range option must be non-negative", -1));
-            return TCL_ERROR;
-        }
-        if (strcmp(opt, "-from") == 0) {
-            from = (Tcl_Size)wide;
-        } else if (strcmp(opt, "-count") == 0) {
-            count = (Tcl_Size)wide;
-            countSet = 1;
-        } else {
-            Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown option %s", opt));
-            return TCL_ERROR;
-        }
-    }
-    if (from > h->numPoints) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("-from is outside raw data range", -1));
-        return TCL_ERROR;
-    }
-    if (!countSet) {
-        count = h->numPoints - from;
-    }
-    if (count > h->numPoints - from) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("-count extends past end of raw data", -1));
-        return TCL_ERROR;
-    }
-    *fromPtr = from;
-    *countPtr = count;
-    return TCL_OK;
-}
-
-//***  RawSelectPlotFromArgs function
-/*
- *----------------------------------------------------------------------------------------------------------------------
- *
- * RawSelectPlotFromArgs --
- *
- *      Selects a RawPlot by parsing an optional "-plot index" pair.
- *
- * Parameters:
- *      Tcl_Interp *interp    - Interpreter used for error reporting.
- *      RawFile *rf           - Raw file handle whose plot array is searched.
- *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - Command argument objects.
- *      Tcl_Size firstOpt     - Index where optional "-plot index" parsing begins.
- *      RawPlot **plotPtr     - Output selected plot pointer.
- *      Tcl_Size *nextArgPtr  - Output next unconsumed argument index.
- *
- * Results:
- *      Returns TCL_OK if a plot is selected.
- *      Returns TCL_ERROR if "-plot" is missing its value, the index is invalid, or the file contains no plots.
- *
- * Side Effects:
- *      Writes the selected plot pointer and next argument index on success.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      "-plot" is recognized only when it appears at firstOpt.
- *      If "-plot" is omitted, plot 0 is selected.
- *      The returned RawPlot pointer is borrowed from rf->plots[].
- *
- *----------------------------------------------------------------------------------------------------------------------
- */
-static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc, Tcl_Obj *const objv[],
-                                 Tcl_Size firstOpt, RawPlot **plotPtr, Tcl_Size *nextArgPtr) {
-    Tcl_Size plotIndex = 0;
-    Tcl_Size next = firstOpt;
-    if (next < objc && strcmp(Tcl_GetString(objv[next]), "-plot") == 0) {
-        if (next + 1 >= objc) {
-            Tcl_SetObjResult(interp, Tcl_NewStringObj("missing value for option -plot", -1));
-            return TCL_ERROR;
-        }
-        if (RawParsePlotIndex(interp, rf, objv[next + 1], &plotIndex) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        next += 2;
-    }
-    if (rf->numPlots == 0) {
-        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw file contains no plots", -1));
-        return TCL_ERROR;
-    }
-    *plotPtr = &rf->plots[plotIndex];
-    *nextArgPtr = next;
-    return TCL_OK;
-}
-
 //** Tcl command implementations
+//***  Arg function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * Arg --
+ *
+ *      Retrieves a value from a normalized argument dictionary.
+ *
+ * Parameters:
+ *      Tcl_Obj *args  - Argument dictionary, previously validated by CheckArgs.
+ *      const char *key - Dictionary key without a leading dash.
+ *
+ * Results:
+ *      Returns a borrowed pointer to the value, or NULL if the key is absent.
+ *      The caller must retain the value explicitly if it outlives the dictionary.
+ *
+ * Side Effects:
+ *      None.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static Tcl_Obj *Arg(Tcl_Obj *args, const char *key) {
+    Tcl_Obj *value = NULL, *name = Tcl_NewStringObj(key, -1);
+    Tcl_IncrRefCount(name);
+    Tcl_DictObjGet(NULL, args, name, &value);
+    Tcl_DecrRefCount(name);
+    return value;
+}
+
+//***  CheckArgs function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * CheckArgs --
+ *
+ *      Validates the native argument dictionary and optionally checks for a required key.
+ *      This check also protects native commands invoked directly without the Tcl wrappers.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp   - Interpreter used for error reporting.
+ *      Tcl_Obj *args        - Object to validate as an argument dictionary.
+ *      const char *required - Required key, or NULL to check only dictionary validity.
+ *
+ * Results:
+ *      Returns TCL_OK if the dictionary is valid and the required key is present.
+ *      Returns TCL_ERROR otherwise. Presence is checked independently of the value's contents.
+ *
+ * Side Effects:
+ *      Sets the interpreter result on failure.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int CheckArgs(Tcl_Interp *interp, Tcl_Obj *args, const char *required) {
+    Tcl_Size size;
+    if (Tcl_DictObjSize(interp, args, &size) != TCL_OK)
+        return TCL_ERROR;
+    if (required && !Arg(args, required)) {
+        Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing native argument: %s", required));
+        return TCL_ERROR;
+    }
+    return TCL_OK;
+}
+
+//***  Modes function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * Modes --
+ *
+ *      Decodes optional output and collision-policy settings from a normalized argument dictionary.
+ *      Omitted settings retain the values supplied by the caller.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter used for error reporting.
+ *      Tcl_Obj *args      - Validated argument dictionary.
+ *      int *output        - Input/output representation: 0 for list, 1 for vector.
+ *      int *replace       - Input/output collision policy: 0 for error, 1 for replace.
+ *
+ * Results:
+ *      Returns TCL_OK on success or TCL_ERROR if a supplied setting is invalid.
+ *
+ * Side Effects:
+ *      Updates the supplied settings as they are decoded and sets the interpreter result on failure.
+ *      An earlier setting may already have changed if a later setting is invalid.
+ *      Does not load RBC or modify package defaults.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int Modes(Tcl_Interp *interp, Tcl_Obj *args, int *output, int *replace) {
+    static const char *modes[] = {"list", "vector", NULL};
+    static const char *policies[] = {"error", "replace", NULL};
+    Tcl_Obj *value = Arg(args, "output");
+    if (value && Tcl_GetIndexFromObj(interp, value, modes, "output", TCL_EXACT, output) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    value = Arg(args, "ifexists");
+    if (value && Tcl_GetIndexFromObj(interp, value, policies, "collision policy", TCL_EXACT, replace) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    return TCL_OK;
+}
+
+//***  DeletePackageDefaults function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * DeletePackageDefaults --
+ *
+ *      Releases package defaults registered as interpreter-associated data.
+ *
+ * Parameters:
+ *      void *data         - PackageDefaults allocation owned by the interpreter.
+ *      Tcl_Interp *interp - Interpreter deleting the associated data; unused.
+ *
+ * Results:
+ *      None.
+ *
+ * Side Effects:
+ *      Frees the defaults allocation.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static void DeletePackageDefaults(void *data, Tcl_Interp *interp) {
+    (void)interp;
+    Tcl_Free((char *)data);
+}
+
+//***  GetPackageDefaults function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * GetPackageDefaults --
+ *
+ *      Retrieves interpreter-local package defaults, creating them on first use.
+ *      Initial defaults are list output and the error collision policy.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter owning the package defaults.
+ *
+ * Results:
+ *      Returns a borrowed pointer to the interpreter-owned PackageDefaults structure.
+ *
+ * Side Effects:
+ *      On first use, allocates the defaults and registers DeletePackageDefaults as their cleanup callback.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static PackageDefaults *GetPackageDefaults(Tcl_Interp *interp) {
+    PackageDefaults *defaults = (PackageDefaults *)Tcl_GetAssocData(interp, "tclsimrawreader::defaults", NULL);
+    if (!defaults) {
+        defaults = (PackageDefaults *)Tcl_Alloc(sizeof(*defaults));
+        memset(defaults, 0, sizeof(*defaults)); /* Initial modes are list; collision policy is error. */
+        Tcl_SetAssocData(interp, "tclsimrawreader::defaults", DeletePackageDefaults, defaults);
+    }
+    return defaults;
+}
+
+//***  PackageDefaultsDict function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * PackageDefaultsDict --
+ *
+ *      Creates a Tcl dictionary describing the current package defaults.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp              - Interpreter passed to dictionary operations.
+ *      const PackageDefaults *defaults - Defaults to represent.
+ *
+ * Results:
+ *      Returns a new dictionary with reference count zero, containing the -output and -ifexists settings.
+ *
+ * Side Effects:
+ *      Allocates Tcl objects for the dictionary and its entries.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static Tcl_Obj *PackageDefaultsDict(Tcl_Interp *interp, const PackageDefaults *defaults) {
+    Tcl_Obj *result = Tcl_NewDictObj();
+    Tcl_DictObjPut(interp, result, Tcl_NewStringObj("-output", -1),
+                   Tcl_NewStringObj(defaults->output ? "vector" : "list", -1));
+    Tcl_DictObjPut(interp, result, Tcl_NewStringObj("-ifexists", -1),
+                   Tcl_NewStringObj(defaults->replace ? "replace" : "error", -1));
+    return result;
+}
+
+//***  ConfigureCmd function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * ConfigureCmd --
+ *
+ *      Implements the native backend for querying and updating interpreter-local package defaults.
+ *      Updates are validated before being committed and do not change existing handles.
+ *
+ * Parameters:
+ *      void *clientData     - Unused command client data.
+ *      Tcl_Interp *interp   - Interpreter owning the defaults and receiving the result.
+ *      Tcl_Size objc        - Number of command arguments; must be three.
+ *      Tcl_Obj *const objv[] - Command arguments:
+ *                                  objv[0] = native command name
+ *                                  objv[1] = query key, or an empty string
+ *                                  objv[2] = normalized settings dictionary
+ *
+ * Results:
+ *      Returns TCL_OK with the queried value or the complete settings dictionary.
+ *      Returns TCL_ERROR on invalid arguments, an unknown query key, or unavailable vector support.
+ *
+ * Side Effects:
+ *      Creates package defaults on first use.
+ *      With an empty query key, applies supplied settings after validation.
+ *      May initialize RBC when updating defaults to use vector output.
+ *      Sets the interpreter result.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int ConfigureCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    (void)clientData;
+    if (objc != 3) {
+        Tcl_WrongNumArgs(interp, 1, objv, "query dictionary");
+        return TCL_ERROR;
+    }
+    if (CheckArgs(interp, objv[2], NULL) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    PackageDefaults *defaults = GetPackageDefaults(interp), candidate = *defaults;
+    const char *query = Tcl_GetString(objv[1]);
+    if (*query) {
+        if (strcmp(query, "output") == 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(defaults->output ? "vector" : "list", -1));
+        } else if (strcmp(query, "ifexists") == 0) {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj(defaults->replace ? "replace" : "error", -1));
+        } else {
+            Tcl_SetObjResult(interp, Tcl_NewStringObj("unknown configuration key", -1));
+            return TCL_ERROR;
+        }
+        return TCL_OK;
+    }
+    if (Modes(interp, objv[2], &candidate.output, &candidate.replace) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    if (Arg(objv[2], "output") || Arg(objv[2], "ifexists")) {
+        if (candidate.output && RawRbcInit(interp) != TCL_OK) {
+            return TCL_ERROR;
+        }
+        *defaults = candidate;
+    }
+    Tcl_SetObjResult(interp, PackageDefaultsDict(interp, defaults));
+    return TCL_OK;
+}
+
 //***  RawPlotReadRbcVectors function
 /*
  *----------------------------------------------------------------------------------------------------------------------
@@ -5085,9 +5100,9 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *
  *      Decodes selected columns into owned numeric buffers and publishes real/complex RBC vectors only after the
  *      complete read succeeds. Binary reads remain chunked; ASCII reads reuse the existing point/token parser.
- *      No per-sample Tcl objects are created. A per-call namespace overrides the handle namespace, then the read caller.
- * Names and collisions are checked before reading and rechecked at publication. Returns a vector command name, or a raw-name to
- * vector-name dictionary.
+ *      No per-sample Tcl objects are created. A per-call namespace overrides the handle namespace, then the read
+ *      caller. Names and collisions are checked before reading and rechecked at publication. Returns a vector command
+ *      name, or a raw-name to vector-name dictionary.
  *
  * Parameters:
  *      rf/plot                 - Open handle and selected plot; caller preserves rf across this operation.
@@ -5103,7 +5118,8 @@ static int RawSelectPlotFromArgs(Tcl_Interp *interp, RawFile *rf, Tcl_Size objc,
  *----------------------------------------------------------------------------------------------------------------------
  */
 static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot, Tcl_Size numVars, Tcl_Size *varIndexes,
-                                 Tcl_Size firstPoint, Tcl_Size count, RawOutputOptions *output, int dictionary, Tcl_Obj **objPtr) {
+                                 Tcl_Size firstPoint, Tcl_Size count, RawOutputOptions *output, int dictionary,
+                                 Tcl_Obj **objPtr) {
     int replace = output->replace;
     RawHeader *h = &plot->header;
     RawNumericColumn *columns = NULL, *allColumns = NULL;
@@ -5127,10 +5143,12 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     memset(columns, 0, (size_t)numVars * sizeof(*columns));
     memset(names, 0, (size_t)numVars * sizeof(*names));
     Tcl_Obj *nsName = output->namespaceOption ? ResolveOutputNamespace(interp, output->namespaceOption) : NULL;
-    if (output->namespaceOption && !nsName) goto done;
-    const char *ns = nsName ? Tcl_GetString(nsName)
-                           : (rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace)
-                                                  : Tcl_GetCurrentNamespace(interp)->fullName);
+    if (output->namespaceOption && !nsName) {
+        goto done;
+    }        
+    const char *ns =
+        nsName ? Tcl_GetString(nsName)
+               : (rf->vectorNamespace ? Tcl_GetString(rf->vectorNamespace) : Tcl_GetCurrentNamespace(interp)->fullName);
     if (numVars == 0) {
         *objPtr = Tcl_NewDictObj();
         status = TCL_OK;
@@ -5148,15 +5166,18 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
                 Tcl_IncrRefCount(key);
                 int code = Tcl_DictObjGet(interp, output->names, key, &dest);
                 Tcl_DecrRefCount(key);
-                if (code != TCL_OK) goto done;
+                if (code != TCL_OK) {
+                    goto done;
+                }                    
             }
         }
         if (dest && Tcl_GetCharLength(dest) == 0) {
             Tcl_SetObjResult(interp, Tcl_NewStringObj("empty destination vector name", -1));
             goto done;
         }
-        names[i] = dest ? (strncmp(Tcl_GetString(dest), "::", 2) == 0 ? Tcl_DuplicateObj(dest)
-                            : Tcl_ObjPrintf("%s%s%s", ns, strcmp(ns, "::") == 0 ? "" : "::", Tcl_GetString(dest)))
+        names[i] = dest ? (strncmp(Tcl_GetString(dest), "::", 2) == 0
+                               ? Tcl_DuplicateObj(dest)
+                               : Tcl_ObjPrintf("%s%s%s", ns, strcmp(ns, "::") == 0 ? "" : "::", Tcl_GetString(dest)))
                         : RawRbcName(ns, variable->name);
         Tcl_IncrRefCount(names[i]);
         for (Tcl_Size j = 0; j < i; j++) {
@@ -5269,7 +5290,9 @@ static int RawPlotReadRbcVectors(Tcl_Interp *interp, RawFile *rf, RawPlot *plot,
     *objPtr = result;
     status = TCL_OK;
 done:
-    if (nsName) Tcl_DecrRefCount(nsName);
+    if (nsName) {
+        Tcl_DecrRefCount(nsName);
+    }        
     if (buffer) {
         Tcl_Free((char *)buffer);
     }
@@ -5289,283 +5312,286 @@ done:
     return status;
 }
 
+//***  RawFileObjCmdImpl function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawFileObjCmdImpl --
+ *
+ *      Executes raw-file handle operations using normalized arguments supplied by the Tcl wrappers.
+ *      Handles metadata queries, list or RBC vector reads, and handle closure.
+ *      Validates plot selection, point ranges, variable selection, and output naming before reading data.
+ *
+ * Parameters:
+ *      void *clientData     - RawFile structure associated with the handle.
+ *      Tcl_Interp *interp   - Interpreter receiving results and error diagnostics.
+ *      Tcl_Size objc        - Number of arguments; must be three, validated by the caller.
+ *      Tcl_Obj *const objv[] - Command arguments:
+ *                                  objv[0] = handle command name
+ *                                  objv[1] = operation name
+ *                                  objv[2] = validated, normalized argument dictionary
+ *
+ * Results:
+ *      Returns TCL_OK on success or TCL_ERROR on an invalid operation, invalid arguments, or read/output failure.
+ *      Query and read operations set the interpreter result to the requested metadata or data.
+ *      Vector reads return a list or RBC vector name; multiple-vector reads return a dictionary.
+ *
+ * Side Effects:
+ *      Read operations access the raw-file channel and allocate result objects or numeric buffers.
+ *      Vector output may initialize RBC, create destination namespaces, and create or replace vectors.
+ *      The close operation deletes the handle command and invokes its deletion callback.
+ *      Sets the interpreter result on failure and releases temporary variable-index arrays before returning.
+ *
+ * Notes:
+ *      Called through RawFileObjCmd, which preserves the handle state across package loading and callbacks.
+ *      Per-call output settings are applied to a local copy and do not change the handle defaults.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    (void)objc;
+    RawFile *rf = (RawFile *)clientData;
+    const char *subcmd = Tcl_GetString(objv[1]);
+    Tcl_Obj *args = objv[2], *value;
+    if (strcmp(subcmd, "close") == 0) {
+        Tcl_DeleteCommandFromToken(interp, rf->token);
+        return TCL_OK;
+    }
+    if (strcmp(subcmd, "plots") == 0) {
+        Tcl_Obj *list = Tcl_NewListObj(0, NULL);
+        for (Tcl_Size i = 0; i < rf->numPlots; i++) {
+            Tcl_ListObjAppendElement(interp, list, RawPlotSummaryObj(&rf->plots[i], i));
+        }            
+        Tcl_SetObjResult(interp, list);
+        return TCL_OK;
+    }
+    Tcl_Size plotIndex = 0;
+    if (!rf->numPlots) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("raw file contains no plots", -1));
+        return TCL_ERROR;
+    }
+    value = Arg(args, "plot");
+    if (value && RawParsePlotIndex(interp, rf, value, &plotIndex) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    RawPlot *plot = &rf->plots[plotIndex];
+    if (strcmp(subcmd, "header") == 0) {
+        Tcl_SetObjResult(interp, RawHeaderToDictObj(&plot->header));
+        return TCL_OK;
+    }
+    if (strcmp(subcmd, "npoints") == 0) {
+        Tcl_SetObjResult(interp, Tcl_NewWideIntObj((Tcl_WideInt)plot->header.numPoints));
+        return TCL_OK;
+    }
+    if (strcmp(subcmd, "names") == 0) {
+        Tcl_Obj *list = Tcl_NewListObj(0, NULL);
+        for (Tcl_Size i = 0; i < plot->header.numVariables; i++) {
+            Tcl_ListObjAppendElement(interp, list, Tcl_NewStringObj(plot->header.variables[i].name, -1));
+        }            
+        Tcl_SetObjResult(interp, list);
+        return TCL_OK;
+    }
+    int dictionary = strcmp(subcmd, "vectors") == 0;
+    if (!dictionary && strcmp(subcmd, "vector") != 0) {
+        Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw handle subcommand \"%s\"", subcmd));
+        return TCL_ERROR;
+    }
+    RawOutputOptions output = rf->output;
+    if (RawReadOptions(interp, args, &output) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    Tcl_WideInt from = 0, count = 0;
+    value = Arg(args, "from");
+    if (value && Tcl_GetWideIntFromObj(interp, value, &from) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    if (from < 0 || from > plot->header.numPoints) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("-from is outside raw data range", -1));
+        return TCL_ERROR;
+    }
+    count = plot->header.numPoints - from;
+    value = Arg(args, "count");
+    if (value && Tcl_GetWideIntFromObj(interp, value, &count) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    if (count < 0 || count > plot->header.numPoints - from) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("-count extends past end of raw data", -1));
+        return TCL_ERROR;
+    }
+    Tcl_Size numVars = 1, singleIndex, *indexes = &singleIndex;
+    if (dictionary) {
+        if (Arg(args, "all")) {
+            if (RawPlotResolveAllVariables(interp, plot, &numVars, &indexes) != TCL_OK) {
+                return TCL_ERROR;
+            }
+        } else {
+            if (CheckArgs(interp, args, "selection") != TCL_OK ||
+                RawPlotResolveVariableList(interp, plot, Arg(args, "selection"), &numVars, &indexes) != TCL_OK) {
+                return TCL_ERROR;
+            }
+        }
+    } else if (CheckArgs(interp, args, "source") != TCL_OK ||
+               RawPlotFindVariable(interp, plot, Tcl_GetString(Arg(args, "source")), &singleIndex) != TCL_OK) {
+        return TCL_ERROR;
+    }
+    int code = RawValidateNames(interp, &output, dictionary, plot, numVars, indexes);
+    Tcl_Obj *result = NULL;
+    if (code == TCL_OK) {
+        if (output.vectors) {
+            code = RawPlotReadRbcVectors(interp, rf, plot, numVars, indexes, (Tcl_Size)from, (Tcl_Size)count, &output,
+                                         dictionary, &result);
+        } else if (dictionary) {
+            code = RawPlotReadVectorsToObj(interp, rf, plot, numVars, indexes, (Tcl_Size)from, (Tcl_Size)count,
+                                           RAW_VECTOR_RESULT_DICT, &result);
+        } else {
+            code = RawPlotVectorToObj(interp, rf, plot, singleIndex, (Tcl_Size)from, (Tcl_Size)count, &result);
+        }            
+    }
+    if (dictionary && indexes) {
+        Tcl_Free((char *)indexes);
+    }
+    if (code == TCL_OK) {
+        Tcl_SetObjResult(interp, result);
+    }        
+    return code;
+}
+
 //***  RawFileObjCmd function
 /*
  *----------------------------------------------------------------------------------------------------------------------
  *
  * RawFileObjCmd --
  *
- *      Output defaults may be overridden per read. Vector output returns command names instead of numeric lists.
- *
- *      Implements the Tcl command associated with an opened raw-file handle.
- *
- *      A RawFile handle command is created by ::tclsimrawreader::openraw and stores a pointer to the corresponding
- *      RawFile structure in its ClientData. This function dispatches handle subcommands for metadata queries,
- *      lazy vector extraction, and handle cleanup.
- *
- *      Supported subcommands are:
- *
- *          $handle close
- *          $handle plots
- *          $handle header ?-plot index?
- *          $handle names ?-plot index?
- *          $handle npoints ?-plot index?
- *          $handle vector ?-plot index? name ?-from index? ?-count count?
- *          $handle vectors ?-plot index? (-all|nameList) ?-from index? ?-count count?
- *
- *      The vector subcommand returns one selected list, or an RBC vector command name in vector output mode.
- *      The vectors subcommand maps raw names to value lists, or to RBC vector command names in vector mode. With -all,
- * vectors returns all vectors from the selected plot.
+ *      Invokes RawFileObjCmdImpl while preserving the native handle state.
+ *      Prevents the state from being freed during package loading or callbacks that delete the handle command.
  *
  * Parameters:
- *      void *clientData      - RawFile pointer supplied when the handle command was created.
- *      Tcl_Interp *interp    - Interpreter used for results and error reporting.
- *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - Command argument objects.
+ *      void *clientData     - RawFile structure associated with the handle.
+ *      Tcl_Interp *interp   - Interpreter receiving results and error diagnostics.
+ *      Tcl_Size objc        - Number of arguments forwarded to RawFileObjCmdImpl.
+ *      Tcl_Obj *const objv[] - Handle name, operation name, and normalized argument dictionary.
  *
  * Results:
- *      Returns TCL_OK if the subcommand completes successfully.
- *      Returns TCL_ERROR on invalid arguments, unknown subcommand, invalid plot/range/vector selection, or read/decode
- *      failure.
+ *      Returns the completion code from RawFileObjCmdImpl.
  *
  * Side Effects:
- *      Dispatches handle subcommands.
- *      Sets the interpreter result for metadata and data-extraction subcommands.
- *      Deletes the handle command for close, triggering RawFileDeleteProc().
- *      May seek and read from the underlying raw-file channel for vector extraction.
- *      Sets the interpreter result on failure.
- *
- * Notes:
- *      Plot selection is delegated to RawSelectPlotFromArgs().
- *      Point range parsing is delegated to RawParseRange().
- *      Single-vector lookup is delegated to RawPlotFindVariable().
- *      Vector-list resolution for the vectors command is delegated to RawPlotResolveVariableList().
- *      Full-vector selection for vectors -all is delegated to RawPlotResolveAllVariables().
- *      Data extraction is lazy. The raw data block is read only when vector or vectors is invoked.
- *      The vector command returns RAW_VECTOR_RESULT_LIST through RawPlotVectorToObj().
- *      The vectors command returns RAW_VECTOR_RESULT_DICT through RawPlotReadVectorsToObj().
- *      In the current command grammar, -plot must appear before the vector name list or -all argument.
- *      After close deletes the handle command, the RawFile pointer must not be used again.
+ *      Temporarily preserves the handle state with Tcl_Preserve.
+ *      Releases it with Tcl_Release after the operation, allowing any deferred deletion to complete.
+ *      Other side effects depend on the requested operation.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
-static int RawFileObjCmdImpl(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
-    RawFile *rf = (RawFile *)clientData;
-    const char *subcmd;
-    if (objc < 2) {
-        Tcl_WrongNumArgs(interp, 1, objv, "subcommand ?arg ...?");
-        return TCL_ERROR;
-    }
-    subcmd = Tcl_GetString(objv[1]);
-    if (strcmp(subcmd, "close") == 0) {
-        if (objc != 2) {
-            Tcl_WrongNumArgs(interp, 2, objv, "");
-            return TCL_ERROR;
-        }
-        Tcl_DeleteCommandFromToken(interp, rf->token);
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "plots") == 0) {
-        Tcl_Obj *listObj;
-        if (objc != 2) {
-            Tcl_WrongNumArgs(interp, 2, objv, "");
-            return TCL_ERROR;
-        }
-        listObj = Tcl_NewListObj(0, NULL);
-        for (Tcl_Size i = 0; i < rf->numPlots; i++) {
-            Tcl_ListObjAppendElement(interp, listObj, RawPlotSummaryObj(&rf->plots[i], i));
-        }
-        Tcl_SetObjResult(interp, listObj);
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "header") == 0) {
-        RawPlot *plot;
-        Tcl_Size next;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (next != objc) {
-            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index?");
-            return TCL_ERROR;
-        }
-        Tcl_SetObjResult(interp, RawHeaderToDictObj(&plot->header));
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "names") == 0) {
-        RawPlot *plot;
-        Tcl_Size next;
-        Tcl_Obj *listObj;
-        RawHeader *h;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (next != objc) {
-            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index?");
-            return TCL_ERROR;
-        }
-        h = &plot->header;
-        listObj = Tcl_NewListObj(0, NULL);
-        for (Tcl_Size i = 0; i < h->numVariables; i++) {
-            Tcl_ListObjAppendElement(interp, listObj,
-                                     Tcl_NewStringObj(h->variables[i].name ? h->variables[i].name : "", -1));
-        }
-        Tcl_SetObjResult(interp, listObj);
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "npoints") == 0) {
-        RawPlot *plot;
-        Tcl_Size next;
-        if (RawSelectPlotFromArgs(interp, rf, objc, objv, 2, &plot, &next) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (next != objc) {
-            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index?");
-            return TCL_ERROR;
-        }
-        Tcl_SetObjResult(interp, Tcl_NewWideIntObj((Tcl_WideInt)plot->header.numPoints));
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "vectors") == 0) {
-        RawPlot *plot;
-        RawOutputOptions output = rf->output;
-        Tcl_Size next;
-        Tcl_Size firstPoint;
-        Tcl_Size count;
-        Tcl_Size numVars;
-        Tcl_Size *varIndexes = NULL;
-        Tcl_Obj *dictObj;
-        int r;
-        next = 2;
-        plot = &rf->plots[0];
-        while (next < objc) {
-            const char *option = Tcl_GetString(objv[next]);
-            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
-                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0 &&
-                strcmp(option, "-namespace") != 0) {
-                break;
-            }
-            if (next + 1 >= objc) {
-                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
-                return TCL_ERROR;
-            }
-            if (strcmp(option, "-plot") == 0) {
-                Tcl_Size index;
-                if (RawParsePlotIndex(interp, rf, objv[next + 1], &index) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-                plot = &rf->plots[index];
-            } else if (RawParseOutputOption(interp, option, objv[next + 1], &output) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            next += 2;
-        }
-        if (next >= objc) {
-            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index? -all|namesList ?-from index? ?-count count?");
-            return TCL_ERROR;
-        }
-        if (strcmp(Tcl_GetString(objv[next]), "-all") == 0) {
-            if (RawPlotResolveAllVariables(interp, plot, &numVars, &varIndexes) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            next++;
-        } else {
-            if (RawPlotResolveVariableList(interp, plot, objv[next], &numVars, &varIndexes) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            next++;
-        }
-        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count, &output) != TCL_OK) {
-            if (varIndexes) {
-                Tcl_Free((char *)varIndexes);
-            }
-            return TCL_ERROR;
-        }
-        if (RawValidateNames(interp, &output, 1, plot, numVars, varIndexes) != TCL_OK) {
-            if (varIndexes) Tcl_Free((char *)varIndexes);
-            return TCL_ERROR;
-        }
-        if (output.vectors) {
-            r = RawPlotReadRbcVectors(interp, rf, plot, numVars, varIndexes, firstPoint, count, &output, 1,
-                                      &dictObj);
-        } else {
-            r = RawPlotReadVectorsToObj(interp, rf, plot, numVars, varIndexes, firstPoint, count,
-                                        RAW_VECTOR_RESULT_DICT, &dictObj);
-        }
-        if (varIndexes) {
-            Tcl_Free((char *)varIndexes);
-        }
-        if (r != TCL_OK) {
-            return TCL_ERROR;
-        }
-        Tcl_SetObjResult(interp, dictObj);
-        return TCL_OK;
-    }
-    if (strcmp(subcmd, "vector") == 0) {
-        RawPlot *plot;
-        RawOutputOptions output = rf->output;
-        Tcl_Size next;
-        Tcl_Size firstPoint;
-        Tcl_Size count;
-        Tcl_Size varIndex;
-        Tcl_Obj *vecObj;
-        const char *name;
-        next = 2;
-        plot = &rf->plots[0];
-        while (next < objc) {
-            const char *option = Tcl_GetString(objv[next]);
-            if (strcmp(option, "-output") != 0 && strcmp(option, "-ifexists") != 0 && strcmp(option, "-plot") != 0 &&
-                strcmp(option, "-name") != 0 && strcmp(option, "-names") != 0 &&
-                strcmp(option, "-namespace") != 0) {
-                break;
-            }
-            if (next + 1 >= objc) {
-                Tcl_SetObjResult(interp, Tcl_ObjPrintf("missing value for option %s", option));
-                return TCL_ERROR;
-            }
-            if (strcmp(option, "-plot") == 0) {
-                Tcl_Size index;
-                if (RawParsePlotIndex(interp, rf, objv[next + 1], &index) != TCL_OK) {
-                    return TCL_ERROR;
-                }
-                plot = &rf->plots[index];
-            } else if (RawParseOutputOption(interp, option, objv[next + 1], &output) != TCL_OK) {
-                return TCL_ERROR;
-            }
-            next += 2;
-        }
-        if (next >= objc) {
-            Tcl_WrongNumArgs(interp, 2, objv, "?-plot index? name ?-from index? ?-count count?");
-            return TCL_ERROR;
-        }
-        name = Tcl_GetString(objv[next]);
-        if (RawPlotFindVariable(interp, plot, name, &varIndex) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        next++;
-        if (RawParseRange(interp, plot, objc, objv, next, &firstPoint, &count, &output) != TCL_OK) {
-            return TCL_ERROR;
-        }
-        if (RawValidateNames(interp, &output, 0, plot, 1, &varIndex) != TCL_OK) return TCL_ERROR;
-        int result = output.vectors ? RawPlotReadRbcVectors(interp, rf, plot, 1, &varIndex, firstPoint, count,
-                                                            &output, 0, &vecObj)
-                                    : RawPlotVectorToObj(interp, rf, plot, varIndex, firstPoint, count, &vecObj);
-        if (result != TCL_OK) {
-            return TCL_ERROR;
-        }
-        Tcl_SetObjResult(interp, vecObj);
-        return TCL_OK;
-    }
-    Tcl_SetObjResult(interp, Tcl_ObjPrintf("unknown raw handle subcommand \"%s\"", subcmd));
-    return TCL_ERROR;
-}
-
-/* Keep the handle alive across optional package loading and RBC client callbacks. */
 static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
     int result;
     Tcl_Preserve(clientData);
     result = RawFileObjCmdImpl(clientData, interp, objc, objv);
     Tcl_Release(clientData);
     return result;
+}
+
+//***  HandleCmd function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * HandleCmd --
+ *
+ *      Forwards a public native handle invocation to the package's Tcl Dispatch procedure.
+ *      The original handle name and arguments are passed unchanged.
+ *
+ * Parameters:
+ *      void *data           - Native handle state; not accessed by this forwarding function.
+ *      Tcl_Interp *interp   - Interpreter in which to invoke Dispatch.
+ *      Tcl_Size objc        - Number of original command arguments.
+ *      Tcl_Obj *const objv[] - Original arguments, beginning with the handle command name.
+ *
+ * Results:
+ *      Returns the Tcl completion code from Dispatch and leaves its interpreter result intact.
+ *
+ * Side Effects:
+ *      Evaluates Tcl code in the current calling context.
+ *      Allocates and releases a temporary argument array and Dispatch command-name object.
+ *      The dispatched operation may modify or destroy the handle.
+ *
+ * Notes:
+ *      The public command retains its native client data and deletion callback.
+ *      Namespace preservation also depends on the Tcl wrappers forwarding calls in the caller's frame.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int HandleCmd(void *data, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    (void)data;
+    Tcl_Obj **call = (Tcl_Obj **)Tcl_Alloc((size_t)(objc + 1) * sizeof(*call));
+    call[0] = Tcl_NewStringObj("::tclsimrawreader::Dispatch", -1);
+    Tcl_IncrRefCount(call[0]);
+    for (Tcl_Size i = 0; i < objc; i++) {
+        call[i + 1] = objv[i];
+    }        
+    int code = Tcl_EvalObjv(interp, objc + 1, call, TCL_EVAL_DIRECT);
+    Tcl_DecrRefCount(call[0]);
+    Tcl_Free((char *)call);
+    return code;
+}
+
+//***  NativeCall function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * NativeCall --
+ *
+ *      Validates a native handle and invokes its implementation with normalized arguments.
+ *      Calls the implementation directly without re-entering the public handle dispatcher.
+ *
+ * Parameters:
+ *      void *unused         - Unused command client data.
+ *      Tcl_Interp *interp   - Interpreter containing the handle and receiving the result.
+ *      Tcl_Size objc        - Number of command arguments; must be four.
+ *      Tcl_Obj *const objv[] - Command arguments:
+ *                                  objv[0] = native command name
+ *                                  objv[1] = handle command name
+ *                                  objv[2] = operation name
+ *                                  objv[3] = normalized argument dictionary
+ *
+ * Results:
+ *      Returns the completion code from the native implementation.
+ *      Returns TCL_ERROR if the argument count, dictionary, or handle is invalid.
+ *
+ * Side Effects:
+ *      Sets the interpreter result on validation failure.
+ *      Otherwise, side effects depend on the requested operation, which may destroy the handle.
+ *
+ * Notes:
+ *      Resolves the handle command and verifies that its command procedure is HandleCmd before
+ *      accessing its client data. Renamed native handles remain valid.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
+static int NativeCall(void *unused, Tcl_Interp *interp, Tcl_Size objc, Tcl_Obj *const objv[]) {
+    (void)unused;
+    if (objc != 4) {
+        Tcl_WrongNumArgs(interp, 1, objv, "handle operation dictionary");
+        return TCL_ERROR;
+    }
+    if (CheckArgs(interp, objv[3], NULL) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    Tcl_Command token = Tcl_GetCommandFromObj(interp, objv[1]);
+    Tcl_CmdInfo info;
+    if (!token || !Tcl_GetCommandInfoFromToken(token, &info)
+#if TCL_MAJOR_VERSION >= 9
+        || info.objProc2 != HandleCmd
+#else
+        || info.objProc != HandleCmd
+#endif
+    ) {
+        Tcl_SetObjResult(interp, Tcl_NewStringObj("invalid tclsimrawreader handle", -1));
+        return TCL_ERROR;
+    }
+#if TCL_MAJOR_VERSION >= 9
+    void *data = info.objClientData2;
+#else
+    void *data = info.objClientData;
+#endif
+    return RawFileObjCmd(data, interp, 3, objv + 1);
 }
 
 //***  RawOpenCmd function
@@ -5583,7 +5609,7 @@ static int RawFileObjCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tc
  *      void *clientData      - Unused.
  *      Tcl_Interp *interp    - Interpreter used for command creation, results, and error reporting.
  *      Tcl_Size objc         - Number of command arguments.
- *      Tcl_Obj *const objv[] - File name and optional dialect/output/collision/namespace options.
+ *      Tcl_Obj *const objv[] - One normalized dictionary from the Tcl openraw wrapper.
  *
  * Results:
  *      Returns TCL_OK if the file is opened, at least one plot is found, and a handle command is created.
@@ -5620,10 +5646,25 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     const PackageDefaults *defaults = GetPackageDefaults(interp);
     output.vectors = defaults->output;
     output.replace = defaults->replace;
-    Tcl_Obj *namespaceOption = NULL;
-    if (RawParseOpenArgs(interp, objc, objv, &dialect, &fileNameObj, &output, &namespaceOption) != TCL_OK) {
+    if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 1, objv, "dictionary");
         return TCL_ERROR;
     }
+    Tcl_Obj *args = objv[1];
+    if (CheckArgs(interp, args, "filepath") != TCL_OK || RawReadOptions(interp, args, &output) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    fileNameObj = Arg(args, "filepath");
+    Tcl_Obj *namespaceOption = Arg(args, "namespace");
+    static const char *dialects[] = {"generic", "ltspice", NULL};
+    int dialectIndex = 0;
+    if (Arg(args, "dialect") &&
+        Tcl_GetIndexFromObj(interp, Arg(args, "dialect"), dialects, "dialect", TCL_EXACT, &dialectIndex) != TCL_OK) {
+        return TCL_ERROR;
+    }        
+    dialect = (RawDialect)dialectIndex;
+    /* Per-read naming fields are not retained on the handle. */
+    output.name = output.names = output.namespaceOption = NULL;
     Tcl_Obj *nsName = namespaceOption ? ResolveOutputNamespace(interp, namespaceOption) : NULL;
     if (namespaceOption && nsName == NULL) {
         return TCL_ERROR;
@@ -5802,7 +5843,7 @@ static int RawOpenCmd(void *clientData, Tcl_Interp *interp, Tcl_Size objc, Tcl_O
     }
     nameObj = Tcl_ObjPrintf("::tclsimrawreader::handle%lld", (long long)++rawHandleCounter);
     name = Tcl_GetString(nameObj);
-    rf->token = Tcl_CreateObjCommand2(interp, name, RawFileObjCmd, rf, RawFileDeleteProc);
+    rf->token = Tcl_CreateObjCommand2(interp, name, HandleCmd, rf, RawFileDeleteProc);
     Tcl_SetObjResult(interp, nameObj);
     return TCL_OK;
 }
@@ -5840,8 +5881,9 @@ extern DLLEXPORT int Tclsimrawreader_Init(Tcl_Interp *interp) {
     if (Tcl_Eval(interp, "namespace eval ::tclsimrawreader:: {}") != TCL_OK) {
         return TCL_ERROR;
     }
-    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::configure", ConfigureCmd, NULL, NULL);
-    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::openraw", (Tcl_ObjCmdProc2 *)RawOpenCmd, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::NativeCall", NativeCall, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::NativeConfigure", ConfigureCmd, NULL, NULL);
+    Tcl_CreateObjCommand2(interp, "::tclsimrawreader::NativeNew", (Tcl_ObjCmdProc2 *)RawOpenCmd, NULL, NULL);
     /* Provide the current package */
     if (Tcl_PkgProvideEx(interp, PACKAGE_NAME, PACKAGE_VERSION, NULL) != TCL_OK) {
         return TCL_ERROR;

@@ -8,6 +8,10 @@
 #include <string.h>
 #include <tcl.h>
 
+typedef struct PackageDefaults {
+    int output, replace;
+} PackageDefaults;
+
 typedef enum { ENC_KIND_UTF8, ENC_KIND_UTF16LE } EncKind;
 
 typedef enum { DATA_BINARY, DATA_VALUES } DataKind;
@@ -35,8 +39,8 @@ typedef enum RawValueStorage {
 typedef enum RawVectorResultMode { RAW_VECTOR_RESULT_LIST, RAW_VECTOR_RESULT_DICT } RawVectorResultMode;
 
 typedef struct RawOutputOptions {
-    int vectors; /* Zero returns lists; nonzero publishes RBC vectors. */
-    int replace; /* Zero rejects collisions; nonzero replaces same-type RBC data. */
+    int vectors;                             /* Zero returns lists; nonzero publishes RBC vectors. */
+    int replace;                             /* Zero rejects collisions; nonzero replaces same-type RBC data. */
     Tcl_Obj *name, *names, *namespaceOption; /* Borrowed per-read destination options; never stored on a handle. */
 } RawOutputOptions;
 

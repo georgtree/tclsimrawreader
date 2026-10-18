@@ -310,6 +310,7 @@ Values:
         set rbcLibrary [lindex [lsearch -inline -index 1 [info loaded] Rbc] 0]
         interp create rawChild
         rawChild eval [list load $rawLibrary Tclsimrawreader]
+        rawChild eval [list source [file join [file dirname [info script]] .. tclsimrawreader.tcl]]
         set handle [rawChild eval [list ::tclsimrawreader::openraw $dcPath]]
         set loader [list $handle close]
         append loader "\n" [list load $rbcLibrary Rbc]
@@ -615,6 +616,7 @@ test defaults-interpreters {a fresh interpreter has independent list defaults} -
     }
     interp create defaultsChild
     defaultsChild eval [list load $library]
+    defaultsChild eval [list source [file join [file dirname [info script]] .. tclsimrawreader.tcl]]
     defaultsChild eval {::tclsimrawreader::configure -output list}
     list [defaultsChild eval {::tclsimrawreader::configure -output}] [::tclsimrawreader::configure -output]\
             [defaultsChild eval {package provide rbc::vector}]
@@ -652,7 +654,6 @@ test defaults-handle-output {new handles capture defaults; existing handles and 
     ::tclsimrawreader::configure {*}$saved
 } -result {1 1 1 1 1}
 
-
 test defaults-policy-query {query, save/restore and atomic validation of collision policy} -body {
     set saved [::tclsimrawreader::configure]
     set initial [::tclsimrawreader::configure -ifexists]
@@ -673,6 +674,7 @@ test defaults-policy-interpreters {policy is interpreter-local and setting it al
     }
     interp create policyChild
     policyChild eval [list load $library]
+    policyChild eval [list source [file join [file dirname [info script]] .. tclsimrawreader.tcl]]
     set initial [policyChild eval {::tclsimrawreader::configure -ifexists}]
     policyChild eval {::tclsimrawreader::configure -ifexists replace}
     set loaded [policyChild eval {package provide rbc::vector}]
@@ -683,7 +685,8 @@ test defaults-policy-interpreters {policy is interpreter-local and setting it al
     ::tclsimrawreader::configure {*}$saved
 } -result {error {} replace}
 
-test defaults-policy-handles {capture at open time and explicit creation/read overrides} -constraints defaultsVectors -body {
+test defaults-policy-handles {capture at open time and explicit creation/read overrides} -constraints defaultsVectors\
+        -body {
     set saved [::tclsimrawreader::configure]
     set handles {}
     set old [::tclsimrawreader::openraw $dcPath -output vector -namespace ::policyRaw]
@@ -700,9 +703,9 @@ test defaults-policy-handles {capture at open time and explicit creation/read ov
     set again [$new vector v(out)]
     set restored [expr {[$v length] > 1}]
     set bulk [$new vectors {v(out)}]
-    list $oldError [expr {$again eq $v}] $restored [expr {[dict get $bulk v(out)] eq $v}] \
-        [catch {$new vector v(out) -ifexists error}] [catch {$explicit vector v(out)}] \
-        [expr {[$old vector v(out) -ifexists replace] eq $v}]
+    list $oldError [expr {$again eq $v}] $restored [expr {[dict get $bulk v(out)] eq $v}]\
+            [catch {$new vector v(out) -ifexists error}] [catch {$explicit vector v(out)}]\
+            [expr {[$old vector v(out) -ifexists replace] eq $v}]
 } -cleanup {
     foreach h $handles {catch {$h close}}
     catch {namespace delete ::policyRaw}

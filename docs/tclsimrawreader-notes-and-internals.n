@@ -1,7 +1,7 @@
 '\"
 '\" '\" Copyright (c) George Yashin
 '\"
-.TH "Notes and internals" 3tcl 0\&.5 "tclsimrawreader" "Tcl NgspiceTclBridge package"
+.TH "Notes and internals" 3tcl 0\&.5 "tclsimrawreader" "Tcl tclsimrawreader package"
 .SH NAME
 Notes and internals - Commands in namespace Notes and internals
 .SH "NOTES AND INTERNALS"
@@ -443,7 +443,7 @@ The main open path is:
 .RS 4n
 .nf
 RawOpenCmd
-    RawParseOpenArgs
+    RawReadOptions
     Tcl_FSOpenFileChannel
     Tcl_SetChannelOption -translation binary
     DetectEncoding
@@ -458,7 +458,7 @@ RawOpenCmd
         if DATA_VALUES:
             ASCII open path
 
-    Tcl_CreateObjCommand2 -> RawFileObjCmd
+    Tcl_CreateObjCommand2 -> HandleCmd -> Tcl Dispatch -> NativeCall -> RawFileObjCmd
 .fi
 .RE
 .PP
@@ -954,7 +954,7 @@ RawFileObjCmd
     vector subcommand
         RawSelectPlotFromArgs
         RawPlotFindVariable
-        RawParseRange
+        Range bounds checks in RawFileObjCmdImpl
         RawPlotVectorToObj
             RawPlotReadVectorsToObj
 .fi
@@ -969,7 +969,7 @@ RawFileObjCmd
         RawSelectPlotFromArgs
         RawPlotResolveVariableList
             or RawPlotResolveAllVariables
-        RawParseRange
+        Range bounds checks in RawFileObjCmdImpl
         RawPlotReadVectorsToObj
 .fi
 .RE
@@ -1140,6 +1140,24 @@ LTspice binary files use physical data size to infer storage layout and point co
 .PP
 LTspice stepped files are normalized into ordinary indexed plots, so the rest of the reader can use the same
 vector-reading path for all formats\&.
+.SH "TCL AND C INTERFACE BOUNDARY"
+.PP
+Public argument parsing, interactive help and command documentation live in the
+package's Tcl source\&. Wrappers pass normalized dictionaries to private native
+commands\&. The native engine keeps semantic checks, data buffers, event handling
+and RBC publication; numeric samples are not copied through Tcl merely to parse
+options\&.
+.PP
+Each returned handle remains a native command and owns its original deletion
+callback\&. It dispatches to the real RAWFILE Tcl procedures, which call the native
+engine in the original caller's frame\&. Renaming or deleting the handle therefore
+retains the existing ownership rules, and relative namespaces still resolve
+against the caller\&. No second TclOO object or hidden lifetime-owning handle is
+introduced\&.
+.PP
+Wrappers call the fixed native argparse directly with -helplevel 1\&. Help prints
+and returns from the current wrapper without running its native operation\&. The
+argparse help-return fix is required; no local compatibility helper is used\&.
 
 
 .SH SEE ALSO

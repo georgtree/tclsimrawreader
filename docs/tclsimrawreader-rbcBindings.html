@@ -57,8 +57,9 @@ make
 library is not linked. <code class="docutils literal notranslate"><span class="pre">--without-rbc</span></code> selects the default list-only build. Even an enabled build can load and
 read lists without RBC installed. <code class="docutils literal notranslate"><span class="pre">rbc::vector</span></code> is required only when vector output is selected. No Tk
 initialization is needed, although the installed RBC binary must have its system library dependencies available.</p>
-<p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. The initial defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code> and <code class="docutils literal notranslate"><span class="pre">error</span></code>; omitted -output and -ifexists at open time inherit the package configuration.
-Either option can be overridden for a single <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> call, without changing the handle defaults:</p>
+<p>Set handle defaults with <code class="docutils literal notranslate"><span class="pre">-output</span> <span class="pre">list|vector</span></code> and <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">error|replace</span></code>. The initial defaults are <code class="docutils literal notranslate"><span class="pre">list</span></code>
+and <code class="docutils literal notranslate"><span class="pre">error</span></code>; omitted -output and -ifexists at open time inherit the package configuration.</p>
+<p>Either option can be overridden for a single <code class="docutils literal notranslate"><span class="pre">vector</span></code> or <code class="docutils literal notranslate"><span class="pre">vectors</span></code> call, without changing the handle defaults:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="k">set</span><span class="w"> </span>raw<span class="w"> </span><span class="k">[</span><span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>openraw<span class="w"> </span>file.raw<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>error<span class="w"> </span><span class="o">-</span>namespace<span class="w"> </span><span class="o">::</span>wave<span class="k">]</span>
 <span class="k">set</span><span class="w"> </span>signal<span class="w"> </span><span class="k">[</span><span class="nv">$raw</span><span class="w"> </span><span class="nv">vector</span><span class="w"> </span>v<span class="k">(</span><span class="nv">out</span><span class="k">)]</span>
 <span class="c"># -&gt; ::wave::v(out)</span>
@@ -70,12 +71,7 @@ Either option can be overridden for a single <code class="docutils literal notra
 <span class="c"># Created vectors remain alive and are owned by the caller.</span>
 </pre></div>
 </div>
-<p>For <code class="docutils literal notranslate"><span class="pre">openraw</span></code>, options may precede or follow the file name. For read commands, <code class="docutils literal notranslate"><span class="pre">-output</span></code>, <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> and <code class="docutils literal notranslate"><span class="pre">-namespace</span></code> may
-precede or follow the selection; <code class="docutils literal notranslate"><span class="pre">-plot</span></code> precedes it as before. Existing <code class="docutils literal notranslate"><span class="pre">-from</span></code>, <code class="docutils literal notranslate"><span class="pre">-count</span></code>, selected-name
-lists, <code class="docutils literal notranslate"><span class="pre">-all</span></code>, dialects and multi-plot handling work in both output modes. In vector mode, <code class="docutils literal notranslate"><span class="pre">vector</span></code> returns one
-fully qualified command name; <code class="docutils literal notranslate"><span class="pre">vectors</span></code> returns a dictionary whose original raw-name keys map to fully
-qualified command names.  An empty selection returns an empty dictionary. A zero-length range creates an empty
-vector.</p>
+<p>For <code class="docutils literal notranslate"><span class="pre">openraw</span></code>, options may precede or follow the file name. For read commands, <code class="docutils literal notranslate"><span class="pre">-output</span></code>, <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> and <code class="docutils literal notranslate"><span class="pre">-namespace</span></code> may precede or follow the selection; <code class="docutils literal notranslate"><span class="pre">-plot</span></code> precedes it as before. Existing <code class="docutils literal notranslate"><span class="pre">-from</span></code>, <code class="docutils literal notranslate"><span class="pre">-count</span></code>, selected-name lists, <code class="docutils literal notranslate"><span class="pre">-all</span></code>, dialects and multi-plot handling work in both output modes. In vector mode, <code class="docutils literal notranslate"><span class="pre">vector</span></code> returns one fully qualified command name; <code class="docutils literal notranslate"><span class="pre">vectors</span></code> returns a dictionary whose original raw-name keys map to fully qualified command names.  An empty selection returns an empty dictionary. A zero-length range creates an empty vector.</p>
 <p>An explicit <code class="docutils literal notranslate"><span class="pre">openraw</span> <span class="pre">-namespace</span> <span class="pre">name</span></code> selects a fixed destination for all vector reads. Relative names resolve
 against the opening caller; missing namespaces and parents are created at open time. The qualified name is
 retained for reads from other namespaces. Without this option, destinations use the read caller as before.
@@ -128,13 +124,12 @@ prefix <code class="docutils literal notranslate"><span class="pre">_raw_</span>
 original name.  The empty name maps to <code class="docutils literal notranslate"><span class="pre">_raw_</span></code>. Reserving this prefix keeps fallback names distinct from
 literal names; a raw name that already begins with <code class="docutils literal notranslate"><span class="pre">_raw_</span></code> is itself encoded. Original dictionary keys are
 always retained.</p>
-<p>The destination uses the per-call namespace, then the handle namespace, then the read caller namespace. Raw namespace separators are
-encoded, so a raw name cannot select a different namespace. Use
-<code class="docutils literal notranslate"><span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span> <span class="pre">-output</span> <span class="pre">vector</span> <span class="pre">-namespace</span> <span class="pre">::signals</span></code> to choose a namespace explicitly
-(create it first). Newly created vectors have no mapped Tcl array variable: use the returned command, for
-example <code class="docutils literal notranslate"><span class="pre">$signal</span> <span class="pre">index</span> <span class="pre">1:20</span></code>, rather than Tcl array substitution <code class="docutils literal notranslate"><span class="pre">$v(out)(1:20)</span></code>.  New vector indexes start at
-zero, including partial reads. Closing a handle does not destroy its output vectors; use <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">destroy</span></code>
-when done.</p>
+<p>The destination uses the per-call namespace, then the handle namespace, then the read caller namespace. Raw
+namespace separators are encoded, so a raw name cannot select a different namespace. Use <code class="docutils literal notranslate"><span class="pre">$raw</span> <span class="pre">vectors</span> <span class="pre">-all</span>
+<span class="pre">-output</span> <span class="pre">vector</span> <span class="pre">-namespace</span> <span class="pre">::signals</span></code> to choose a namespace explicitly (create it first). Newly created vectors
+have no mapped Tcl array variable: use the returned command, for example <code class="docutils literal notranslate"><span class="pre">$signal</span> <span class="pre">index</span> <span class="pre">1:20</span></code>, rather than Tcl
+array substitution <code class="docutils literal notranslate"><span class="pre">$v(out)(1:20)</span></code>.  New vector indexes start at zero, including partial reads. Closing a
+handle does not destroy its output vectors; use <code class="docutils literal notranslate"><span class="pre">rbc::vector</span> <span class="pre">destroy</span></code> when done.</p>
 <p>This naming replaces the earlier encoding of every parenthesis and underscore. Existing vectors are not renamed.
 Use returned command names or dictionary values rather than reconstructing names using the old encoding.</p>
 </section>
@@ -158,7 +153,8 @@ updates are not a transaction against reentrant application code.</p>
 output fails with <code class="docutils literal notranslate"><span class="pre">RBC</span> <span class="pre">VECTOR</span> <span class="pre">READONLY</span></code>. Every selected destination is checked before reading/publishing
 results, so a pre-existing lock on a later column leaves earlier vectors unchanged. Permission is checked
 again during publication to handle callbacks. List output remains available regardless of destination locks.
-Unlock explicitly before replacing, or request a fresh destination / <code class="docutils literal notranslate"><span class="pre">#auto</span></code>. Newly created vectors are writable.</p>
+Unlock explicitly before replacing, or request a fresh destination / <code class="docutils literal notranslate"><span class="pre">#auto</span></code>. Newly created vectors are
+writable.</p>
 </section>
 <section id="automatic-and-explicit-output-vector-names">
 <span id="r-rbcbindings-automatic-and-explicit-output-vector-names"></span><span id="r-3a3arbcbindingsqzautomatic20and20explicit20output20vector20names"></span><h2>Automatic and explicit output vector names<a class="headerlink" href="#automatic-and-explicit-output-vector-names" title="Link to this heading">¶</a></h2>
@@ -180,12 +176,13 @@ fresh RBC vector for every selected signal:</p>
 follow the selection. They are per-read options, not <code class="docutils literal notranslate"><span class="pre">openraw</span></code> defaults.  Unknown or unselected keys, duplicate
 selections/destinations, and empty destinations are errors.</p>
 <p>Relative destinations, including <code class="docutils literal notranslate"><span class="pre">#auto</span></code>, use the per-call <code class="docutils literal notranslate"><span class="pre">-namespace</span></code>, the handle’s namespace, or the read
-caller’s namespace, in that order. Omitted <code class="docutils literal notranslate"><span class="pre">-names</span></code> entries use signal-derived names in the selected namespace. An absolute destination overrides this location; its parent namespace must exist. RBC
-itself expands a final <code class="docutils literal notranslate"><span class="pre">#auto</span></code> component in the selected namespace: the reader does not generate names or
-counters. <code class="docutils literal notranslate"><span class="pre">auto</span></code> without <code class="docutils literal notranslate"><span class="pre">#</span></code> is an ordinary explicit name.  Repeated automatic reads create distinct vectors
-even with <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code>; explicit names retain the existing collision/type policy. Real and complex
-output, empty ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle
-and are owned by the caller. If publication fails, vectors created by that read are removed.</p>
+caller’s namespace, in that order. Omitted <code class="docutils literal notranslate"><span class="pre">-names</span></code> entries use signal-derived names in the selected
+namespace. An absolute destination overrides this location; its parent namespace must exist. RBC itself expands
+a final <code class="docutils literal notranslate"><span class="pre">#auto</span></code> component in the selected namespace: the reader does not generate names or counters. <code class="docutils literal notranslate"><span class="pre">auto</span></code>
+without <code class="docutils literal notranslate"><span class="pre">#</span></code> is an ordinary explicit name.  Repeated automatic reads create distinct vectors even with
+<code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code>; explicit names retain the existing collision/type policy. Real and complex output, empty
+ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle and are owned
+by the caller. If publication fails, vectors created by that read are removed.</p>
 </section>
 <section id="package-defaults">
 <span id="r-rbcbindings-package-defaults"></span><span id="r-3a3arbcbindingsqzpackage20defaults"></span><h2>Package defaults<a class="headerlink" href="#package-defaults" title="Link to this heading">¶</a></h2>
@@ -194,14 +191,15 @@ and are owned by the caller. If publication fails, vectors created by that read 
 <span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>replace
 </pre></div>
 </div>
-<p>New handles inherit output and collision defaults unless their creation call supplies <code class="docutils literal notranslate"><span class="pre">-output</span></code> or <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> explicitly. Existing
-handles keep their settings; per-read overrides still take precedence.</p>
-<p>Use <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span></code> to query all settings, or <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">-output</span></code> to query one.
-The all-settings dictionary can be restored with <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">{*}$saved</span></code>.
-Initial representation defaults remain <code class="docutils literal notranslate"><span class="pre">list</span></code>; the initial <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> policy is <code class="docutils literal notranslate"><span class="pre">error</span></code>. Invalid requests and unavailable vector support leave settings unchanged.
-Configuration belongs to the current Tcl interpreter. The command is public but <strong>not namespace-exported</strong>,
-so wildcard imports cannot introduce a <code class="docutils literal notranslate"><span class="pre">configure</span></code> collision. Namespace selection and naming are unchanged. <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code> still requires a compatible, writable destination.
-The collision setting affects vector output only and can be configured even in a build without RBC.</p>
+<p>New handles inherit output and collision defaults unless their creation call supplies <code class="docutils literal notranslate"><span class="pre">-output</span></code> or <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code>
+explicitly. Existing handles keep their settings; per-read overrides still take precedence.</p>
+<p>Use <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span></code> to query all settings, or <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">-output</span></code> to query
+one.  The all-settings dictionary can be restored with <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">{*}$saved</span></code>.  Initial
+representation defaults remain <code class="docutils literal notranslate"><span class="pre">list</span></code>; the initial <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> policy is <code class="docutils literal notranslate"><span class="pre">error</span></code>. Invalid requests and unavailable vector support leave settings unchanged.  Configuration belongs to the current Tcl interpreter. The
+command is public but <strong>not namespace-exported</strong>, so wildcard imports cannot introduce a <code class="docutils literal notranslate"><span class="pre">configure</span></code>
+collision. Namespace selection and naming are unchanged. <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code> still requires a compatible,
+writable destination.</p>
+<p>The collision setting affects vector output only and can be configured even in a build without RBC.</p>
 <hr class="docutils" />
 <p class="centered">
 <strong>Copyright (c) George Yashin</strong></p></section>

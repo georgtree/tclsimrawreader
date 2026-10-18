@@ -124,22 +124,35 @@ not write to the configured system prefix. `DIST_ROOT` and `DIST_NAME` may be ov
 directory and name; `DIST_NAME` must be a single directory name. Run `dist-clean` separately, not alongside `dist`
 or `dist-zip` in the same parallel make invocation.
 
+# Interactive help
 
-## Package defaults
-
-Set representation and collision defaults once after loading the package:
+All public methods have interactive help. To get information about command and its arguments call it with `-help`
+switch:
 
 ```tcl
 package require tclsimrawreader
-::tclsimrawreader::configure -output vector -ifexists replace
+namespace import ::tclsimrawreader::*
+openraw -help
 ```
 
-New handles inherit output and collision defaults unless their creation call supplies `-output` or `-ifexists` explicitly. Existing
-handles keep their settings; per-read overrides still take precedence.
+```text
+Open a raw file and return its handle command.. Can accepts unambiguous prefixes
+instead of switches names. Allows switches to appear after parameters.
+    Switches:
+        -dialect value - Raw-file dialect; defaults to generic. Value must be
+            one of: generic or ltspice.
+        -output value - Output representation; overrides the configured default.
+            Value must be one of: list or vector.
+        -ifexists value - Destination collision policy; overrides the configured
+            default. Value must be one of: error or replace.
+        -namespace value - Destination namespace; relative to the caller,
+            created if missing.
+        -help - Help switch, when provided, forces ignoring all other switches
+            and parameters, prints the help message to stdout, and returns up to 1
+            levels above the current level.
+    Parameters:
+        filepath - Path to the SPICE raw file.
+```
 
-Use `::tclsimrawreader::configure` to query all settings, or `::tclsimrawreader::configure -output` to query one.
-The all-settings dictionary can be restored with `::tclsimrawreader::configure {*}$saved`.
-Initial representation defaults remain `list`; the initial `-ifexists` policy is `error`. Invalid requests and unavailable vector support leave settings unchanged.
-Configuration belongs to the current Tcl interpreter. The command is public but **not namespace-exported**,
-so wildcard imports cannot introduce a `configure` collision. Namespace selection and naming are unchanged. `-ifexists replace` still requires a compatible, writable destination.
-The collision setting affects vector output only and can be configured even in a build without RBC.
+Best to do it in interactive console, see [tkcon](https://github.com/bohagan1/TkCon)
+

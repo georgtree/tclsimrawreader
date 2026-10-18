@@ -150,25 +150,38 @@ not write to the configured system prefix. <code class="docutils literal notrans
 directory and name; <code class="docutils literal notranslate"><span class="pre">DIST_NAME</span></code> must be a single directory name. Run <code class="docutils literal notranslate"><span class="pre">dist-clean</span></code> separately, not alongside <code class="docutils literal notranslate"><span class="pre">dist</span></code>
 or <code class="docutils literal notranslate"><span class="pre">dist-zip</span></code> in the same parallel make invocation.</p>
 </section>
-<section id="package-defaults">
-<span id="r-package-defaults"></span><span id="r-package20defaults"></span><h2>Package defaults<a class="headerlink" href="#package-defaults" title="Link to this heading">¶</a></h2>
-<p>Set representation and collision defaults once after loading the package:</p>
+</section>
+<section id="interactive-help">
+<span id="r-interactive-help"></span><span id="r-interactive20help"></span><h1>Interactive help<a class="headerlink" href="#interactive-help" title="Link to this heading">¶</a></h1>
+<p>All public methods have interactive help. To get information about command and its arguments call it with <code class="docutils literal notranslate"><span class="pre">-help</span></code>
+switch:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nb">package</span><span class="w"> </span>require<span class="w"> </span>tclsimrawreader
-<span class="o">::</span><span class="nv">tclsimrawreader</span><span class="o">::</span>configure<span class="w"> </span><span class="o">-</span>output<span class="w"> </span>vector<span class="w"> </span><span class="o">-</span>ifexists<span class="w"> </span>replace
+<span class="k">namespace</span><span class="w"> </span>import<span class="w"> </span><span class="o">::</span>tclsimrawreader::<span class="o">*</span>
+<span class="nv">openraw</span><span class="w"> </span><span class="o">-</span>help
 </pre></div>
 </div>
-<p>New handles inherit output and collision defaults unless their creation call supplies <code class="docutils literal notranslate"><span class="pre">-output</span></code> or <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> explicitly. Existing
-handles keep their settings; per-read overrides still take precedence.</p>
-<p>Use <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span></code> to query all settings, or <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">-output</span></code> to query one.
-The all-settings dictionary can be restored with <code class="docutils literal notranslate"><span class="pre">::tclsimrawreader::configure</span> <span class="pre">{*}$saved</span></code>.
-Initial representation defaults remain <code class="docutils literal notranslate"><span class="pre">list</span></code>; the initial <code class="docutils literal notranslate"><span class="pre">-ifexists</span></code> policy is <code class="docutils literal notranslate"><span class="pre">error</span></code>. Invalid requests and unavailable vector support leave settings unchanged.
-Configuration belongs to the current Tcl interpreter. The command is public but <strong>not namespace-exported</strong>,
-so wildcard imports cannot introduce a <code class="docutils literal notranslate"><span class="pre">configure</span></code> collision. Namespace selection and naming are unchanged. <code class="docutils literal notranslate"><span class="pre">-ifexists</span> <span class="pre">replace</span></code> still requires a compatible, writable destination.
-The collision setting affects vector output only and can be configured even in a build without RBC.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>Open a raw file and return its handle command.. Can accepts unambiguous prefixes
+instead of switches names. Allows switches to appear after parameters.
+    Switches:
+        -dialect value - Raw-file dialect; defaults to generic. Value must be
+            one of: generic or ltspice.
+        -output value - Output representation; overrides the configured default.
+            Value must be one of: list or vector.
+        -ifexists value - Destination collision policy; overrides the configured
+            default. Value must be one of: error or replace.
+        -namespace value - Destination namespace; relative to the caller,
+            created if missing.
+        -help - Help switch, when provided, forces ignoring all other switches
+            and parameters, prints the help message to stdout, and returns up to 1
+            levels above the current level.
+    Parameters:
+        filepath - Path to the SPICE raw file.
+</pre></div>
+</div>
+<p>Best to do it in interactive console, see <a class="reference external" href="https://github.com/bohagan1/TkCon">tkcon</a></p>
 <hr class="docutils" />
 <p class="centered">
 <strong>Copyright (c) George Yashin</strong></p></section>
-</section>
 
 
             <div class="clearer"></div>
@@ -187,9 +200,9 @@ The collision setting affects vector output only and can be configured even in a
 <li><a class="reference internal" href="#quick-start">Quick start</a></li>
 <li><a class="reference internal" href="#installation-layout-and-removal">Installation layout and removal</a></li>
 <li><a class="reference internal" href="#installation-archives">Installation archives</a></li>
-<li><a class="reference internal" href="#package-defaults">Package defaults</a></li>
 </ul>
 </li>
+<li><a class="reference internal" href="#interactive-help">Interactive help</a></li>
 </ul>
 
   </div>

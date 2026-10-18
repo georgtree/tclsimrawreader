@@ -10,7 +10,30 @@
 #include <rbcStubLib.c>
 #endif
 
-/* RBC recognizes #auto as the final component of a qualified vector name. */
+//***  RawRbcAutoName function
+/*
+ *----------------------------------------------------------------------------------------------------------------------
+ *
+ * RawRbcAutoName --
+ *
+ *      Checks whether a vector destination requests automatic naming through RBC's #auto mechanism.
+ *
+ * Parameters:
+ *      Tcl_Obj *name - Non-NULL object containing the destination name.
+ *
+ * Results:
+ *      Returns nonzero if the name is exactly "#auto" or ends with "::#auto".
+ *      Returns zero otherwise.
+ *
+ * Side Effects:
+ *      None beyond obtaining the object's string representation.
+ *
+ * Notes:
+ *      Only recognizes the automatic-name marker; does not generate a name, validate its namespace,
+ *      or create a vector. The name "auto" without a leading hash is treated as an ordinary name.
+ *
+ *----------------------------------------------------------------------------------------------------------------------
+ */
 int RawRbcAutoName(Tcl_Obj *name) {
     const char *s = Tcl_GetString(name);
     size_t n = strlen(s);
@@ -23,9 +46,24 @@ int RawRbcAutoName(Tcl_Obj *name) {
  *
  * RawRbcInit --
  *
- *      Initializes optional RBC stubs in the current interpreter. Called only for vector output, before reading or
- *      publishing data. Package initialization may evaluate Tcl. Returns TCL_OK, or TCL_ERROR with a load/build error.
- *      A global stub pointer does not establish that RBC is initialized in this particular interpreter.
+ *      Initializes the optional RBC vector stubs interface in the current interpreter.
+ *      Requires RBC vector version 0.8.1 or a compatible later version.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter in which to initialize RBC vector support.
+ *
+ * Results:
+ *      Returns TCL_OK if the RBC vector stubs interface is available.
+ *      Returns TCL_ERROR if initialization fails or the extension was built without RBC support.
+ *
+ * Side Effects:
+ *      May load the RBC vector package and evaluate Tcl code during package initialization.
+ *      Initializes the RBC vector stubs pointer and sets the interpreter result on failure.
+ *
+ * Notes:
+ *      Called only when vector output is required, before reading or publishing vector data.
+ *      A previously initialized global stubs pointer does not establish that RBC is available
+ *      in the current interpreter.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
@@ -50,11 +88,26 @@ int RawRbcInit(Tcl_Interp *interp) {
  *
  * RawRbcName --
  *
- *      Returns an unreferenced Tcl object containing the destination in the selected namespace. Safe
- *      literal RBC names retain their spelling, including balanced parentheses and underscores. Names containing
- *      namespace separators, unsupported characters, unbalanced parentheses or the reserved _raw_ prefix are
- *      encoded as _raw_ followed by uppercase hexadecimal UTF-8 bytes. Reserving this prefix makes fallback names
- *      disjoint from literal names. Raw names remain unchanged as dictionary keys; no array variable is mapped.
+ *      Constructs a fully qualified RBC vector destination from a namespace and raw signal name.
+ *      Preserves supported literal names and encodes other names to avoid invalid or ambiguous destinations.
+ *
+ * Parameters:
+ *      const char *ns      - Canonical fully qualified destination namespace.
+ *      const char *rawName - Null-terminated raw signal name.
+ *
+ * Results:
+ *      Returns a new Tcl string object with reference count zero containing the qualified destination name.
+ *
+ * Side Effects:
+ *      Allocates the result object. Does not create namespaces or vectors.
+ *
+ * Notes:
+ *      Literal names may contain ASCII letters, digits, underscores, dots, at signs, balanced parentheses,
+ *      and isolated interior colons. Empty names, names containing namespace separators, leading or trailing
+ *      colons, unsupported characters, unbalanced parentheses, or the reserved "_raw_" prefix are encoded.
+ *      Encoding uses "_raw_" followed by uppercase hexadecimal pairs for every byte of the raw name.
+ *      Reserving the prefix prevents encoded names from colliding with preserved literal names.
+ *      Does not check destination availability or interpret #auto as an automatic-naming request.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */
@@ -97,10 +150,30 @@ Tcl_Obj *RawRbcName(const char *ns, const char *rawName) {
  *
  * RawRbcCheck --
  *
- *      Checks one fully qualified destination without changing it. Replacement updates only an existing RBC vector
- *      of the same numeric type, preserving its clients and mapping. Unrelated commands and renamed/aliased vector
- *      commands are rejected. With writable set, read-only destinations are rejected before any publication.
- *      Returns TCL_OK or TCL_ERROR with a collision/type/read-only diagnostic. Requires initialized stubs.
+ *      Checks whether a destination can receive an RBC vector without modifying it.
+ *      Replacement requires an existing vector of the same numeric type and its registered instance command.
+ *
+ * Parameters:
+ *      Tcl_Interp *interp - Interpreter containing the destination and receiving error diagnostics.
+ *      Tcl_Obj *nameObj   - Fully qualified destination name.
+ *      int complex       - Nonzero for complex output; zero for real output.
+ *      int replace       - Nonzero to allow replacement of an existing compatible vector.
+ *      int writable      - Nonzero to require that an existing vector permits modification.
+ *
+ * Results:
+ *      Returns TCL_OK if the destination is unused or satisfies the replacement requirements.
+ *      Returns TCL_ERROR on a collision, incompatible numeric type, invalid instance command,
+ *      failed writability check, or a build without RBC support.
+ *
+ * Side Effects:
+ *      Sets the interpreter result on failure.
+ *      Does not create, resize, replace, or otherwise modify the destination.
+ *
+ * Notes:
+ *      Requires initialized RBC stubs in RBC-enabled builds.
+ *      An unrelated command occupying the destination is always rejected.
+ *      For an existing vector, verifies that the command's client data identifies that same vector.
+ *      Publication must recheck the destination if intervening callbacks could change it.
  *
  *----------------------------------------------------------------------------------------------------------------------
  */

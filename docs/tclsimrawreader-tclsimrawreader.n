@@ -1,7 +1,7 @@
 '\"
 '\" '\" Copyright (c) George Yashin
 '\"
-.TH "tclsimrawreader" 3tcl 0\&.5 "tclsimrawreader" "Tcl NgspiceTclBridge package"
+.TH "tclsimrawreader" 3tcl 0\&.5 "tclsimrawreader" "Tcl tclsimrawreader package"
 .SH NAME
 tclsimrawreader - Commands in namespace tclsimrawreader
 .SH SYNOPSIS
@@ -13,13 +13,15 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .br
 \fBRAWFILE\fP \fIsubcommand \&.\&.\&.\fP
 .br
-\fBRAWFILE close\fP
+\fBRAWFILE close\fP \fI?-help?\fP
 .br
 \fBRAWFILE header\fP \fI?-plot index?\fP
 .br
 \fBRAWFILE names\fP \fI?-plot index?\fP
 .br
-\fBRAWFILE plots\fP
+\fBRAWFILE npoints\fP \fI?-plot index?\fP
+.br
+\fBRAWFILE plots\fP \fI?-help?\fP
 .br
 \fBRAWFILE vector\fP \fI?-plot index? name ?-from index? ?-count index? ?-output list|vector? ?-ifexists error|replace? ?-name destination|#auto? ?-namespace name?\fP
 .br
@@ -156,6 +158,9 @@ Gets dictionary containing metadata from the header for the selected plot\&. If 
 \fInames\fP
 Gets list of vectors' (variables') names defined in the header\&. If provided without -plot option, returns names from the first plot\&.
 .TP
+\fInpoints\fP
+Returns the number of points in the selected plot\&.
+.TP
 \fIplots\fP
 Gets list of dictionaries containing information about the plots in the \&.raw file\&.
 .TP
@@ -174,8 +179,15 @@ Refer to the documentation of each subcommand for details\&.
 .PP
 Closes channel to provided \&.raw file and deletes subcommand\&.
 .RS 4n
-\fBRAWFILE close\fP
+\fBRAWFILE close\fP \fI?-help?\fP
 .br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+handle
+Not documented\&.
 .RE
 .PP
 \fBDescription\fR
@@ -187,6 +199,8 @@ Example:
 $rawfile close
 .fi
 .RE
+.PP
+The handle argument is supplied automatically when called as \fI$handle\fP close\&.
 .PP
 .RS -4n
 \fBRAWFILE header\fR (::tclsimrawreader)
@@ -201,6 +215,9 @@ option, returns header from the first plot\&.
 .PP
 \fBParameters\fR
 .RS 4n
+.TP
+handle
+Not documented\&.
 .TP
 -plot index
 Index of the plot, optional\&.
@@ -263,6 +280,8 @@ $rawfile header -plot 1
 .fi
 .RE
 .PP
+The handle argument is supplied automatically when called as \fI$handle\fP header\&.
+.PP
 \fBReturn value\fR
 .PP
 dictionary
@@ -281,6 +300,9 @@ names from the first plot\&.
 \fBParameters\fR
 .RS 4n
 .TP
+handle
+Not documented\&.
+.TP
 -plot index
 Index of the plot, optional\&.
 .RE
@@ -296,9 +318,39 @@ $rawfile names -plot 1
 .fi
 .RE
 .PP
+The handle argument is supplied automatically when called as \fI$handle\fP names\&.
+.PP
 \fBReturn value\fR
 .PP
 list
+.PP
+.RS -4n
+\fBRAWFILE npoints\fR (::tclsimrawreader)
+.RE
+.PP
+Returns the number of points in the selected plot\&.
+.RS 4n
+\fBRAWFILE npoints\fP \fI?-plot index?\fP
+.br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+handle
+Not documented\&.
+.TP
+-plot index
+Zero-based plot index; defaults to zero\&.
+.RE
+.PP
+\fBDescription\fR
+.PP
+The handle argument is supplied automatically when called as \fI$handle\fP npoints\&.
+.PP
+\fBReturn value\fR
+.PP
+Returns the number of points in the selected plot\&.
 .PP
 .RS -4n
 \fBRAWFILE plots\fR (::tclsimrawreader)
@@ -306,8 +358,15 @@ list
 .PP
 Gets list of dictionaries containing information about the plots in the \&.raw file\&.
 .RS 4n
-\fBRAWFILE plots\fP
+\fBRAWFILE plots\fP \fI?-help?\fP
 .br
+.RE
+.PP
+\fBParameters\fR
+.RS 4n
+.TP
+handle
+Not documented\&.
 .RE
 .PP
 \fBDescription\fR
@@ -338,6 +397,8 @@ dataoffset - number of bytes immediately after Binary:/Values: marker line for p
 \(bu
 databytes - number of bytes occupied by a data block of the plot
 .PP
+The handle argument is supplied automatically when called as \fI$handle\fP plots\&.
+.PP
 \fBReturn value\fR
 .PP
 list of dictionaries
@@ -355,6 +416,9 @@ index is not provided, return values from the first plot\&.
 .PP
 \fBParameters\fR
 .RS 4n
+.TP
+handle
+Not documented\&.
 .TP
 -count index
 Number of values from the number provided by -from, or from the start otherwise, optional, integer\&.
@@ -384,14 +448,15 @@ Name of the vector (variable)
 \fBDescription\fR
 .PP
 In vector mode, safe literal names (including v(out) and v(1)) are preserved and qualified in the handle
-namespace, if configured, or the calling namespace otherwise\&. A per-call -namespace takes precedence\&. Unsupported/namespace-bearing names and names
-beginning with the reserved _raw_ prefix become _raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original
-dictionary keys are unchanged\&. Requires RBC's -literal true creation support\&. New vectors have no mapped
-arrays and outlive the handle\&. Complex raw data creates complex RBC vectors\&. Replacement preserves same-type
-vector identity; an unrelated command or a numeric type mismatch is an error\&. See the start page for naming
-and ownership\&. Relative -namespace resolves against the read caller and creates missing parents\&.
-Empty namespaces are rejected\&. Fully qualified destinations override -namespace; their parent must exist\&.
-RBC expands a final #auto component in the selected namespace\&. Overrides do not change handle defaults\&.
+namespace, if configured, or the calling namespace otherwise\&. A per-call -namespace takes
+precedence\&. Unsupported/namespace-bearing names and names beginning with the reserved _raw_ prefix become
+_raw_ plus uppercase hexadecimal UTF-8 bytes\&. Original dictionary keys are unchanged\&. Requires RBC's -literal
+true creation support\&. New vectors have no mapped arrays and outlive the handle\&. Complex raw data creates complex
+RBC vectors\&. Replacement preserves same-type vector identity; an unrelated command or a numeric type mismatch is
+an error\&. See the start page for naming and ownership\&. Relative -namespace resolves against the read caller and
+creates missing parents\&.  Empty namespaces are rejected\&. Fully qualified destinations override -namespace; their
+parent must exist\&.  RBC expands a final #auto component in the selected namespace\&. Overrides do not change handle
+defaults\&.
 .PP
 Example:
 .PP
@@ -404,6 +469,8 @@ $rawfile vector ID(M1) -count 16
 $rawfile vector ID(M1)
 .fi
 .RE
+.PP
+The handle argument is supplied automatically when called as \fI$handle\fP vector\&.
 .PP
 \fBReturn value\fR
 .PP
@@ -422,6 +489,9 @@ if specified\&. If plot index is not provided, return values from the first plot
 .PP
 \fBParameters\fR
 .RS 4n
+.TP
+handle
+Not documented\&.
 .TP
 -all|namesList
 List of vectors' (variables') names, or -all to read all availible vectors\&.
@@ -451,9 +521,10 @@ Index of the plot, optional\&.
 \fBDescription\fR
 .PP
 Options do not change the handle defaults\&. Vector naming, types, collision handling and ownership follow the
-single-vector command\&. Relative -namespace resolves against the read caller and creates missing parents\&.
-Empty namespaces are rejected\&. Fully qualified destinations override -namespace; their parent must exist\&.
-RBC expands a final #auto component in the selected namespace\&. All selected data is decoded before any destination data is replaced\&.
+single-vector command\&. Relative -namespace resolves against the read caller and creates missing parents\&. Empty
+namespaces are rejected\&. Fully qualified destinations override -namespace; their parent must exist\&. RBC expands
+a final #auto component in the selected namespace\&. All selected data is decoded before any destination data is
+replaced\&.
 .PP
 Example:
 .PP
@@ -467,6 +538,8 @@ $rawfile vectors {ID(M1) V(VD)}
 $rawfile vectors -plot 2 -all
 .fi
 .RE
+.PP
+The handle argument is supplied automatically when called as \fI$handle\fP vectors\&.
 .PP
 \fBReturn value\fR
 .PP

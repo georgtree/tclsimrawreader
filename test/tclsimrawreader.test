@@ -13,7 +13,7 @@ test testErrorHandling-1 {wrong command name} -setup {
 } -body {
     catch {$r name} errorStr
     return $errorStr
-} -result {unknown raw handle subcommand "name"} -cleanup {
+} -result {unknown subcommand "name": must be names, header, npoints, plots, vector, vectors, close} -cleanup {
     $r close
     unset r
 }
@@ -43,7 +43,7 @@ test testErrorHandling-4 {-from option is negative} -setup {
 } -body {
     catch {$r vector v(out) -from -1 -count 10} errorStr
     return $errorStr
-} -result {range option must be non-negative} -cleanup {
+} -result {-from value "-1" fails validation: $arg >= 0} -cleanup {
     $r close
     unset r
 }
@@ -63,7 +63,7 @@ test testErrorHandling-6 {} -setup {
 } -body {
     catch {$r vector v(out) -from 1 -count} errorStr
     return $errorStr
-} -result {missing value for option -count} -cleanup {
+} -result {-count requires an argument} -cleanup {
     $r close
     unset r
 }
@@ -73,7 +73,7 @@ test testErrorHandling-7 {} -setup {
 } -body {
     catch {$r vectors -all -plot } errorStr
     return $errorStr
-} -result {missing value for option -plot} -cleanup {
+} -result {-plot requires an argument} -cleanup {
     $r close
     unset r
 }
@@ -87,5 +87,54 @@ test testErrorHandling-6 {} -setup {
     $r close
     unset r
 }
+
+# The Tcl layer owns public syntax; help must return normally and do no work.
+foreach operation {names header npoints plots vector vectors close} {
+    test interface-help-$operation {help does not read, close or require positional arguments} -setup {
+        set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+    } -body [string map [list @OP@ $operation] {
+        set result [$r @OP@ -help]
+        list $result [expr {[llength [$r names]] > 0}]
+    }] -cleanup {catch {$r close}} -match glob -output {*-help*} -result {{} 1}
+}
+foreach command {openraw configure} {
+    test interface-help-$command {top-level help needs no filename and changes no defaults}\
+            -body [string map [list @CMD@ $command] {
+        set before [::tclsimrawreader::configure]
+        set result [::tclsimrawreader::@CMD@ -help]
+        list $result [expr {$before eq [::tclsimrawreader::configure]}]
+    }] -match glob -output {*-help*} -result {{} 1}
+}
+
+test interface-prefixes {prefixes and options on either side of the selection} -setup {
+    set r [::tclsimrawreader::openraw -dia gen [file join $currentDir raw_files ngspice dc.raw] -out li]
+} -body {
+    list [expr {[$r vector -co 2 v(out) -fr 1 -pl 0] eq [$r vector v(out) -count 2 -from 1]}]\
+            [expr {[$r vectors -a -co 2 -pl 0] eq [$r vectors -all -count 2]}] [::tclsimrawreader::configure -out]
+} -cleanup {$r close} -result {1 1 list}
+
+test interface-validation {reject ambiguous prefixes, invalid values and conflicting selection before reading} -setup {
+    set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+} -body {
+    list [catch {$r vector v(out) -na target}] [catch {$r vector v(out) -co nope}]\
+            [catch {$r vectors -all {v(out)}}] [catch {$r vectors}] [catch {$r close extra}] [expr {[$r npoints] > 0}]
+} -cleanup {$r close} -result {1 1 1 1 1 1}
+
+test interface-lifetime {renamed and aliased handles retain their native lifetime} -setup {
+    namespace eval ::rawInterface {}
+    set r [::tclsimrawreader::openraw [file join $currentDir raw_files ngspice dc.raw]]
+    rename $r ::rawInterface::reader
+    interp alias {} ::rawInterface::alias {} ::rawInterface::reader
+} -body {
+    set same [namespace eval ::rawInterface {expr {[reader names] eq [alias names]}}]
+    namespace eval ::rawInterface {reader close}
+    list $same [info commands ::rawInterface::reader] [catch {::rawInterface::alias names}]
+} -cleanup {namespace delete ::rawInterface} -result {1 {} 1}
+
+test interface-native-validation {private dictionary API rejects malformed input and foreign handles} -body {
+    list [catch {::tclsimrawreader::NativeNew {}}] [catch {::tclsimrawreader::NativeNew {filepath}}]\
+            [catch {::tclsimrawreader::NativeCall puts vector {source v(out)}}]\
+            [expr {[llength [info procs ::tclsimrawreader::openraw]] == 1}]
+} -result {1 1 1 1}
 
 cleanupTests

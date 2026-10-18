@@ -21,7 +21,9 @@ namespace eval rbcBindings {
         read lists without RBC installed. `rbc::vector` is required only when vector output is selected. No Tk
         initialization is needed, although the installed RBC binary must have its system library dependencies available.
 
-        Set handle defaults with `-output list|vector` and `-ifexists error|replace`. The initial defaults are `list` and `error`; omitted -output and -ifexists at open time inherit the package configuration.
+        Set handle defaults with `-output list|vector` and `-ifexists error|replace`. The initial defaults are `list`
+        and `error`; omitted -output and -ifexists at open time inherit the package configuration.
+
         Either option can be overridden for a single `vector` or `vectors` call, without changing the handle defaults:
 
         ```tcl
@@ -36,12 +38,12 @@ namespace eval rbcBindings {
         # Created vectors remain alive and are owned by the caller.
         ```
 
-        For `openraw`, options may precede or follow the file name. For read commands, `-output`, `-ifexists` and `-namespace` may
-        precede or follow the selection; `-plot` precedes it as before. Existing `-from`, `-count`, selected-name
-        lists, `-all`, dialects and multi-plot handling work in both output modes. In vector mode, `vector` returns one
-        fully qualified command name; `vectors` returns a dictionary whose original raw-name keys map to fully
-        qualified command names.  An empty selection returns an empty dictionary. A zero-length range creates an empty
-        vector.
+        For `openraw`, options may precede or follow the file name. For read commands, `-output`, `-ifexists` and\
+        `-namespace` may precede or follow the selection; `-plot` precedes it as before. Existing `-from`, `-count`,\
+        selected-name lists, `-all`, dialects and multi-plot handling work in both output modes. In vector mode,\
+        `vector` returns one fully qualified command name; `vectors` returns a dictionary whose original raw-name keys\
+        map to fully qualified command names.  An empty selection returns an empty dictionary. A zero-length range\
+        creates an empty vector.
 
         An explicit `openraw -namespace name` selects a fixed destination for all vector reads. Relative names resolve
         against the opening caller; missing namespaces and parents are created at open time. The qualified name is
@@ -73,13 +75,12 @@ namespace eval rbcBindings {
         literal names; a raw name that already begins with `_raw_` is itself encoded. Original dictionary keys are
         always retained.
 
-        The destination uses the per-call namespace, then the handle namespace, then the read caller namespace. Raw namespace separators are
-        encoded, so a raw name cannot select a different namespace. Use
-        `$raw vectors -all -output vector -namespace ::signals` to choose a namespace explicitly
-        (create it first). Newly created vectors have no mapped Tcl array variable: use the returned command, for
-        example `$signal index 1:20`, rather than Tcl array substitution `$v(out)(1:20)`.  New vector indexes start at
-        zero, including partial reads. Closing a handle does not destroy its output vectors; use `rbc::vector destroy`
-        when done.
+        The destination uses the per-call namespace, then the handle namespace, then the read caller namespace. Raw
+        namespace separators are encoded, so a raw name cannot select a different namespace. Use `$raw vectors -all
+        -output vector -namespace ::signals` to choose a namespace explicitly (create it first). Newly created vectors
+        have no mapped Tcl array variable: use the returned command, for example `$signal index 1:20`, rather than Tcl
+        array substitution `$v(out)(1:20)`.  New vector indexes start at zero, including partial reads. Closing a
+        handle does not destroy its output vectors; use `rbc::vector destroy` when done.
 
         This naming replaces the earlier encoding of every parenthesis and underscore. Existing vectors are not renamed.
         Use returned command names or dictionary values rather than reconstructing names using the old encoding.
@@ -98,12 +99,12 @@ namespace eval rbcBindings {
         updates are not a transaction against reentrant application code.
 
         ## Read-only destinations
-
         `-ifexists replace` preserves the read-only state and never unlocks a destination. A locked real or complex
         output fails with `RBC VECTOR READONLY`. Every selected destination is checked before reading/publishing
         results, so a pre-existing lock on a later column leaves earlier vectors unchanged. Permission is checked
         again during publication to handle callbacks. List output remains available regardless of destination locks.
-        Unlock explicitly before replacing, or request a fresh destination / `#auto`. Newly created vectors are writable.
+        Unlock explicitly before replacing, or request a fresh destination / `#auto`. Newly created vectors are
+        writable.
 
         ## Automatic and explicit output vector names
         For a single read, use `-name #auto` with vector output. For a bulk read, use `-names #auto` to allocate a
@@ -127,14 +128,15 @@ namespace eval rbcBindings {
         selections/destinations, and empty destinations are errors.
 
         Relative destinations, including `#auto`, use the per-call `-namespace`, the handle's namespace, or the read
-        caller's namespace, in that order. Omitted `-names` entries use signal-derived names in the selected namespace. An absolute destination overrides this location; its parent namespace must exist. RBC
-        itself expands a final `#auto` component in the selected namespace: the reader does not generate names or
-        counters. `auto` without `#` is an ordinary explicit name.  Repeated automatic reads create distinct vectors
-        even with `-ifexists replace`; explicit names retain the existing collision/type policy. Real and complex
-        output, empty ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle
-        and are owned by the caller. If publication fails, vectors created by that read are removed.
-        ## Package defaults
+        caller's namespace, in that order. Omitted `-names` entries use signal-derived names in the selected
+        namespace. An absolute destination overrides this location; its parent namespace must exist. RBC itself expands
+        a final `#auto` component in the selected namespace: the reader does not generate names or counters. `auto`
+        without `#` is an ordinary explicit name.  Repeated automatic reads create distinct vectors even with
+        `-ifexists replace`; explicit names retain the existing collision/type policy. Real and complex output, empty
+        ranges, and lack of mapped Tcl arrays behave as before. Returned vectors outlive the raw handle and are owned
+        by the caller. If publication fails, vectors created by that read are removed.
 
+        ## Package defaults
         Set representation and collision defaults once after loading the package:
 
         ```tcl
@@ -142,14 +144,17 @@ namespace eval rbcBindings {
         ::tclsimrawreader::configure -output vector -ifexists replace
         ```
 
-        New handles inherit output and collision defaults unless their creation call supplies `-output` or `-ifexists` explicitly. Existing
-        handles keep their settings; per-read overrides still take precedence.
+        New handles inherit output and collision defaults unless their creation call supplies `-output` or `-ifexists`
+        explicitly. Existing handles keep their settings; per-read overrides still take precedence.
 
-        Use `::tclsimrawreader::configure` to query all settings, or `::tclsimrawreader::configure -output` to query one.
-        The all-settings dictionary can be restored with `::tclsimrawreader::configure {*}$saved`.
-        Initial representation defaults remain `list`; the initial `-ifexists` policy is `error`. Invalid requests and unavailable vector support leave settings unchanged.
-        Configuration belongs to the current Tcl interpreter. The command is public but **not namespace-exported**,
-        so wildcard imports cannot introduce a `configure` collision. Namespace selection and naming are unchanged. `-ifexists replace` still requires a compatible, writable destination.
+        Use `::tclsimrawreader::configure` to query all settings, or `::tclsimrawreader::configure -output` to query
+        one.  The all-settings dictionary can be restored with `::tclsimrawreader::configure {*}$saved`.  Initial
+        representation defaults remain `list`; the initial `-ifexists` policy is `error`. Invalid requests and\
+        unavailable vector support leave settings unchanged.  Configuration belongs to the current Tcl interpreter. The
+        command is public but **not namespace-exported**, so wildcard imports cannot introduce a `configure`
+        collision. Namespace selection and naming are unchanged. `-ifexists replace` still requires a compatible,
+        writable destination.
+
         The collision setting affects vector output only and can be configured even in a build without RBC.
 
     }
