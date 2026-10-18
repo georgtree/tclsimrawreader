@@ -575,7 +575,7 @@ testConstraint defaultsNoVectors [expr {!$haveVectors}]
 # Public package configuration is intentionally not namespace-exported.
 test defaults-query {initial settings and single-option queries} -body {
     list [::tclsimrawreader::configure] [::tclsimrawreader::configure -output]
-} -result {{-output list} list}
+} -result {{-output list -ifexists error} list}
 
 test defaults-validation {invalid requests do not partially change configuration} -body {
     set saved [::tclsimrawreader::configure]
@@ -601,7 +601,7 @@ test defaults-set-restore {set returns all settings; returned dictionary restore
     set query [::tclsimrawreader::configure -output]
     set restored [::tclsimrawreader::configure {*}$saved]
     list $changed $query [expr {$restored eq $saved}]
-} -cleanup {::tclsimrawreader::configure {*}$saved} -result {{-output vector} vector 1}
+} -cleanup {::tclsimrawreader::configure {*}$saved} -result {{-output vector -ifexists error} vector 1}
 
 test defaults-interpreters {a fresh interpreter has independent list defaults} -constraints defaultsVectors -body {
     set saved [::tclsimrawreader::configure]
@@ -651,5 +651,62 @@ test defaults-handle-output {new handles capture defaults; existing handles and 
     catch {namespace delete ::defaultsRaw}
     ::tclsimrawreader::configure {*}$saved
 } -result {1 1 1 1 1}
+
+
+test defaults-policy-query {query, save/restore and atomic validation of collision policy} -body {
+    set saved [::tclsimrawreader::configure]
+    set initial [::tclsimrawreader::configure -ifexists]
+    set changed [::tclsimrawreader::configure -ifexists replace]
+    set badMode [catch {::tclsimrawreader::configure -ifexists error -output invalid}]
+    set unchanged [expr {[::tclsimrawreader::configure] eq $changed}]
+    set badPolicy [catch {::tclsimrawreader::configure -ifexists vector}]
+    set restored [::tclsimrawreader::configure {*}$saved]
+    list $initial [dict get $changed -ifexists] $badMode $unchanged $badPolicy [expr {$restored eq $saved}]
+} -cleanup {::tclsimrawreader::configure {*}$saved} -result {error replace 1 1 1 1}
+
+test defaults-policy-interpreters {policy is interpreter-local and setting it alone does not load RBC} -body {
+    set saved [::tclsimrawreader::configure]
+    ::tclsimrawreader::configure -ifexists replace
+    set library {}
+    foreach loaded [info loaded] {
+        if {[string equal -nocase [lindex $loaded 1] tclsimrawreader]} {set library [lindex $loaded 0]; break}
+    }
+    interp create policyChild
+    policyChild eval [list load $library]
+    set initial [policyChild eval {::tclsimrawreader::configure -ifexists}]
+    policyChild eval {::tclsimrawreader::configure -ifexists replace}
+    set loaded [policyChild eval {package provide rbc::vector}]
+    policyChild eval {::tclsimrawreader::configure -ifexists error}
+    list $initial $loaded [::tclsimrawreader::configure -ifexists]
+} -cleanup {
+    catch {interp delete policyChild}
+    ::tclsimrawreader::configure {*}$saved
+} -result {error {} replace}
+
+test defaults-policy-handles {capture at open time and explicit creation/read overrides} -constraints defaultsVectors -body {
+    set saved [::tclsimrawreader::configure]
+    set handles {}
+    set old [::tclsimrawreader::openraw $dcPath -output vector -namespace ::policyRaw]
+    lappend handles $old
+    set v [$old vector v(out)]
+    ::tclsimrawreader::configure -ifexists replace
+    set new [::tclsimrawreader::openraw $dcPath -output vector -namespace ::policyRaw]
+    lappend handles $new
+    set explicit [::tclsimrawreader::openraw $dcPath -output vector -namespace ::policyRaw -ifexists error]
+    lappend handles $explicit
+    ::tclsimrawreader::configure -ifexists error
+    set oldError [catch {$old vector v(out)}]
+    $v set {-99}
+    set again [$new vector v(out)]
+    set restored [expr {[$v length] > 1}]
+    set bulk [$new vectors {v(out)}]
+    list $oldError [expr {$again eq $v}] $restored [expr {[dict get $bulk v(out)] eq $v}] \
+        [catch {$new vector v(out) -ifexists error}] [catch {$explicit vector v(out)}] \
+        [expr {[$old vector v(out) -ifexists replace] eq $v}]
+} -cleanup {
+    foreach h $handles {catch {$h close}}
+    catch {namespace delete ::policyRaw}
+    ::tclsimrawreader::configure {*}$saved
+} -result {1 1 1 1 1 1 1}
 
 cleanupTests

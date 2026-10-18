@@ -7,7 +7,7 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 .SH SYNOPSIS
 \fBconfigure\fP \fI?option?\fP
 .br
-\fBconfigure\fP \fI?-output list|vector?\fP
+\fBconfigure\fP \fI?-output list|vector? ?-ifexists error|replace?\fP
 .br
 \fBopenraw\fP \fI?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath\fP
 .br
@@ -32,16 +32,19 @@ tclsimrawreader - Commands in namespace tclsimrawreader
 \fBconfigure\fR (::tclsimrawreader)
 .RE
 .PP
-Queries or changes package-wide representation defaults in this Tcl interpreter\&.
+Queries or changes package-wide representation and collision defaults in this Tcl interpreter\&.
 .RS 4n
 \fBconfigure\fP \fI?option?\fP
 .br
-\fBconfigure\fP \fI?-output list|vector?\fP
+\fBconfigure\fP \fI?-output list|vector? ?-ifexists error|replace?\fP
 .br
 .RE
 .PP
 \fBParameters\fR
 .RS 4n
+.TP
+-ifexists policy
+Default destination collision policy: error or replace; initially error\&.
 .TP
 -output mode
 Default output representation: list or vector; initially list\&.
@@ -51,21 +54,22 @@ Default output representation: list or vector; initially list\&.
 .PP
 With no arguments, returns all settings as an option/value dictionary\&. With one option, returns its value\&.
 With option/value pairs, validates all settings before applying them and returns the complete configuration\&.
-Invalid options, invalid modes, or unavailable RBC support leave the configuration unchanged\&. Selecting
+Invalid options or values, or unavailable RBC support leave the configuration unchanged\&. Selecting
 vector mode requires an RBC-enabled build and a loadable rbc::vector package; list queries/settings do not
 load RBC\&. Defaults are independent in separate interpreters\&.
 .PP
-New raw-file handles capture this default unless -output is supplied explicitly at creation\&.
+New raw-file handles capture these defaults unless -output or -ifexists is supplied explicitly at creation\&.
 Existing handles retain their settings\&. Per-read overrides take precedence over the handle default\&.
 This public command is not namespace-exported; call it as ::tclsimrawreader::configure\&.
-Namespace selection, naming and collision policies are unaffected\&.
+The collision policy affects vector output only; it can be configured while using list mode or without RBC\&.
+Replacement still requires a compatible, writable destination\&. Namespace selection and naming are unchanged\&.
 .PP
 Example:
 .PP
 .RS 4n
 .nf
 set saved [::tclsimrawreader::configure]
-::tclsimrawreader::configure -output vector
+::tclsimrawreader::configure -output vector -ifexists replace
 ::tclsimrawreader::configure -output
 ::tclsimrawreader::configure {*}$saved
 .fi
@@ -94,7 +98,7 @@ subcommands operate on that file instance\&.
 Optional dialect, possible values are generic and ltspice, default is generic
 .TP
 -ifexists policy
-Default collision policy, error or replace; default is error
+Default collision policy, error or replace; inherits the package configuration (initially error)
 .TP
 -namespace name
 Fixed destination namespace for all vector output; created with missing parents at open\&.
