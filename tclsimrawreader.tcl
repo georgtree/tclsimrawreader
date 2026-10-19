@@ -31,15 +31,15 @@ proc ::tclsimrawreader::configure {args} {
     # Synopsis: ?-output list|vector? ?-ifexists error|replace?
     # Returns: selected option value for a single-option query; otherwise all settings as a dictionary.
     if {([llength $args]==1) && ([lindex $args 0] ne {-help})} {
-        set arguments [argparse -inline -helplevel 1 -help {Query or change package defaults. With no arguments returns\
-                                                                    all settings.} {
+        set arguments [argparse -inline -help {Query or change package defaults. With no arguments returns all\
+                                                       settings.} {
             {-output -key query -value output -help {Query the default output representation}}
             {-ifexists -key query -value ifexists -help {Query the default collision policy}}
         }]
         return [NativeConfigure [dict get $arguments query] {}]
     }
-    set arguments [argparse -inline -helplevel 1 -help {Query or change package defaults atomically. Defaults are local\
-                                                                to this interpreter.} {
+    set arguments [argparse -inline -help {Query or change package defaults atomically. Defaults are local to this\
+                                                   interpreter.} {
         {-output= -enum {list vector} -help {Default representation: list or vector}}
         {-ifexists= -enum {error replace} -help {Default collision policy: error or replace}}
     }]
@@ -69,7 +69,7 @@ proc ::tclsimrawreader::openraw {args} {
     #```
     # Synopsis: ?-dialect name? ?-output list|vector? ?-ifexists error|replace? ?-namespace name? filepath
     # Returns: command name to work with the file, references as `RAWFILE` later
-    set arguments [argparse -inline -mixed -helplevel 1 -help {Open a raw file and return its handle command.} {
+    set arguments [argparse -inline -mixed -help {Open a raw file and return its handle command.} {
         {-dialect= -enum {generic ltspice} -help {Raw-file dialect; defaults to generic}}
         {-output= -enum {list vector} -help {Output representation; overrides the configured default}}
         {-ifexists= -enum {error replace} -help {Destination collision policy; overrides the configured default}}
@@ -95,7 +95,7 @@ proc ::tclsimrawreader::RAWFILE::names {handle args} {
     # Returns: list
     #
     # The handle argument is supplied automatically when called as $handle names.
-    set arguments [argparse -inline -helplevel 1 -help {Return signal names from the selected plot.} {
+    set arguments [argparse -inline -help {Return signal names from the selected plot.} {
         {-plot= -type wideinteger -validate {$arg >= 0} -help {Zero-based plot index; defaults to zero}}
     }]
     return [uplevel 1 [list ::tclsimrawreader::NativeCall $handle names $arguments]]
@@ -135,7 +135,7 @@ proc ::tclsimrawreader::RAWFILE::header {handle args} {
     # Returns: dictionary
     #
     # The handle argument is supplied automatically when called as $handle header.
-    set arguments [argparse -inline -helplevel 1 -help {Return header metadata from the selected plot.} {
+    set arguments [argparse -inline -help {Return header metadata from the selected plot.} {
         {-plot= -type wideinteger -validate {$arg >= 0} -help {Zero-based plot index; defaults to zero}}
     }]
     return [uplevel 1 [list ::tclsimrawreader::NativeCall $handle header $arguments]]
@@ -147,7 +147,7 @@ proc ::tclsimrawreader::RAWFILE::npoints {handle args} {
     # Synopsis: ?-plot index?
     #
     # The handle argument is supplied automatically when called as $handle npoints.
-    set arguments [argparse -inline -helplevel 1 -help {Return the number of points in the selected plot.} {
+    set arguments [argparse -inline -help {Return the number of points in the selected plot.} {
         {-plot= -type wideinteger -validate {$arg >= 0} -help {Zero-based plot index; defaults to zero}}
     }]
     return [uplevel 1 [list ::tclsimrawreader::NativeCall $handle npoints $arguments]]
@@ -170,7 +170,7 @@ proc ::tclsimrawreader::RAWFILE::plots {handle args} {
     #
     # The handle argument is supplied automatically when called as $handle plots.
     # Synopsis: ?-help?
-    set arguments [argparse -inline -helplevel 1 -help {Return summaries of all plots in the file.} {}]
+    set arguments [argparse -inline -help {Return summaries of all plots in the file.} {}]
     return [uplevel 1 [list ::tclsimrawreader::NativeCall $handle plots $arguments]]
 }
 
@@ -212,8 +212,7 @@ proc ::tclsimrawreader::RAWFILE::vector {handle args} {
     # Returns: list of values in list mode, or fully qualified RBC vector command name in vector mode
     #
     # The handle argument is supplied automatically when called as $handle vector.
-    set arguments [argparse -inline -mixed -helplevel 1 -help {Read one signal as a list or an independent RBC vector.}\
-                           {
+    set arguments [argparse -inline -mixed -help {Read one signal as a list or an independent RBC vector.} {
         {-plot= -type wideinteger -validate {$arg >= 0} -help {Zero-based plot index; defaults to zero}}
         {-from= -type wideinteger -validate {$arg >= 0} -help {First sample index; defaults to zero}}
         {-count= -type wideinteger -validate {$arg >= 0} -help {Number of samples; defaults to the remaining samples}}
@@ -261,8 +260,7 @@ proc ::tclsimrawreader::RAWFILE::vectors {handle args} {
     # Returns: dictionary of original raw names to value lists, or to fully qualified RBC vectors' commands' names
     #
     # The handle argument is supplied automatically when called as $handle vectors.
-    set arguments [argparse -inline -mixed -helplevel 1 -help {Read selected signals as a dictionary of lists or RBC\
-                                                                       vector names.} {
+    set arguments [argparse -inline -mixed -help {Read selected signals as a dictionary of lists or RBC vector names.} {
         {-plot= -type wideinteger -validate {$arg >= 0} -help {Zero-based plot index; defaults to zero}}
         {-from= -type wideinteger -validate {$arg >= 0} -help {First sample index; defaults to zero}}
         {-count= -type wideinteger -validate {$arg >= 0} -help {Number of samples; defaults to the remaining samples}}
@@ -289,8 +287,7 @@ proc ::tclsimrawreader::RAWFILE::close {handle args} {
     #
     # The handle argument is supplied automatically when called as $handle close.
     # Synopsis: ?-help?
-    set arguments [argparse -inline -helplevel 1 -help {Close the file and delete its handle; output vectors remain\
-                                                                alive.} {}]
+    set arguments [argparse -inline -help {Close the file and delete its handle; output vectors remain alive.} {}]
     return [uplevel 1 [list ::tclsimrawreader::NativeCall $handle close $arguments]]
 }
 
