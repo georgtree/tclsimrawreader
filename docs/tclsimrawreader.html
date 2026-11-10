@@ -1,52 +1,171 @@
+
+
 <!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="./">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
-<html lang="en" data-content_root="./">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>tclsimrawreader - read SPICE .raw files with Tcl &mdash; tclsimrawreader  documentation</title>
+      <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
+      <link rel="stylesheet" type="text/css" href="_static/manual.css?v=00cdc845" />
 
-    <title>tclsimrawreader - read SPICE .raw files with Tcl &#8212; tclsimrawreader  documentation</title>
-    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
-    <link rel="stylesheet" type="text/css" href="_static/classic.css?v=f11ead97" />
-    
-    <script src="_static/documentation_options.js?v=5929fcd5"></script>
-    <script src="_static/doctools.js?v=9bcbadda"></script>
-    <script src="_static/sphinx_highlight.js?v=dc90522c"></script>
-    
+  
+      <script src="_static/jquery.js?v=5d32c60e"></script>
+      <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="_static/doctools.js?v=fd6eb6e6"></script>
+      <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script src="_static/js/theme.js"></script>
     <link rel="index" title="Index" href="genindex.html" />
     <link rel="search" title="Search" href="search.html" />
     <link rel="next" title="RBC vectors support" href="tclsimrawreader-rbcBindings.html" />
     <link rel="prev" title="&lt;no title&gt;" href="index.html" /> 
-  </head><body>
-    <div class="related" role="navigation" aria-label="Related">
-      <h3>Navigation</h3>
-      <ul>
-        <li class="right" style="margin-right: 10px">
-          <a href="genindex.html" title="General Index"
-             accesskey="I">index</a></li>
-        <li class="right" >
-          <a href="tclsimrawreader-rbcBindings.html" title="RBC vectors support"
-             accesskey="N">next</a> |</li>
-        <li class="right" >
-          <a href="index.html" title="&lt;no title&gt;"
-             accesskey="P">previous</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
-        <li class="nav-item nav-item-this"><a href="">tclsimrawreader - read SPICE .raw files with Tcl</a></li> 
-      </ul>
-    </div>  
+</head>
 
-    <div class="document">
-      <div class="documentwrapper">
-        <div class="bodywrapper">
-          <div class="body" role="main">
-            
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="index.html" class="icon icon-home">
+            tclsimrawreader
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">tclsimrawreader - read SPICE .raw files with Tcl</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#what-it-gives-you-at-a-glance">What it gives you (at a glance)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-requirements">Building &amp; requirements</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#documentation">Documentation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#quick-start">Quick start</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-layout-and-removal">Installation layout and removal</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#installation-archives">Installation archives</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="#interactive-help">Interactive help</a></li>
+<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader-rbcBindings.html">RBC vectors support</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#optional-rbc-vector-output">Optional RBC vector output</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#destination-names-and-ownership">Destination names and ownership</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#collisions-and-numeric-types">Collisions and numeric types</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#read-only-destinations">Read-only destinations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#automatic-and-explicit-output-vector-names">Automatic and explicit output vector names</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-rbcBindings.html#package-defaults">Package defaults</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html">::tclsimrawreader</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#commands">Commands</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#configure"><code class="docutils literal notranslate"><span class="pre">configure</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#openraw"><code class="docutils literal notranslate"><span class="pre">openraw</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-close"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">close</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-header"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">header</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-names"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">names</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-npoints"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">npoints</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-plots"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">plots</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-vector"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vector</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-tclsimrawreader.html#rawfile-vectors"><code class="docutils literal notranslate"><span class="pre">RAWFILE</span> <span class="pre">vectors</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html">Notes and internals</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#optional-numeric-output-adapter">Optional numeric output adapter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#raw-file-format-support">Raw file format support</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#supported-raw-file-structure">Supported raw-file structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#generic-spice3-style-dialect">Generic SPICE3-style dialect</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ascii-values-data">ASCII <code class="docutils literal notranslate"><span class="pre">Values:</span></code> data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#binary-data">Binary data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#multiple-plots">Multiple plots</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-dialect">LTspice dialect</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-text-header-encoding">LTspice text/header encoding</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-ascii-values-data">LTspice ASCII <code class="docutils literal notranslate"><span class="pre">Values:</span></code> data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-binary-data">LTspice binary data</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#fastaccess">FastAccess</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-stepped-plot-separation">LTspice stepped plot separation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#limitations">Limitations</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#tclsimrawreader-implementation-overview">tclsimrawreader implementation overview</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#core-data-model">Core data model</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#open-path">Open path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#header-parsing-path">Header parsing path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#generic-binary-open-path">Generic binary open path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#generic-ascii-open-path">Generic ASCII open path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-binary-open-path">LTspice binary open path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-ascii-open-path">LTspice ASCII open path</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-stepped-plot-splitting">LTspice stepped plot splitting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-transient-step-splitting">LTspice transient step splitting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ltspice-non-transient-step-splitting">LTspice non-transient step splitting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#binary-pseudo-plot-construction">Binary pseudo-plot construction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ascii-pseudo-plot-construction">ASCII pseudo-plot construction</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#vector-extraction-path">Vector extraction path</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#single-vector">Single vector</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#multiple-vectors">Multiple vectors</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#backend-dispatch">Backend dispatch</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#binary-vector-reading">Binary vector reading</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ascii-vector-reading">ASCII vector reading</a></li>
+<li class="toctree-l4"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#result-construction">Result construction</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#ownership-summary">Ownership summary</a></li>
+<li class="toctree-l3"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#summary">Summary</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="tclsimrawreader-Notes-and-internals.html#tcl-and-c-interface-boundary">Tcl and C interface boundary</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="genindex.html">Index</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">tclsimrawreader</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="index.html" class="icon icon-home" aria-label="Home"></a></li>
+      <li class="breadcrumb-item active">tclsimrawreader - read SPICE .raw files with Tcl</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="_sources/tclsimrawreader.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
   <section id="tclsimrawreader-read-spice-raw-files-with-tcl">
-<span id="r-tclsimrawreader-read-spice-raw-files-with-tcl"></span><span id="r-tclsimrawreader202d20read20spice202eraw20files20with20tcl"></span><h1>tclsimrawreader - read SPICE .raw files with Tcl<a class="headerlink" href="#tclsimrawreader-read-spice-raw-files-with-tcl" title="Link to this heading">¶</a></h1>
+<span id="r-tclsimrawreader-read-spice-raw-files-with-tcl"></span><span id="r-tclsimrawreader202d20read20spice202eraw20files20with20tcl"></span><h1>tclsimrawreader - read SPICE .raw files with Tcl<a class="headerlink" href="#tclsimrawreader-read-spice-raw-files-with-tcl" title="Link to this heading"></a></h1>
 <p><code class="docutils literal notranslate"><span class="pre">tclsimrawreader</span></code> is a Tcl C extension that allows to read SPICE3f5 raw-Binary and raw-ASCII files.
 It doesn’t read the whole file data into memory but read certain vectors lazily by request.</p>
 <p>It targets Tcl 9.0 and works on Linux/macOS/Windows.</p>
 <section id="what-it-gives-you-at-a-glance">
-<span id="r-what-it-gives-you-at-a-glance"></span><span id="r-what20it20gives20you2028at20a20glance29"></span><h2>What it gives you (at a glance)<a class="headerlink" href="#what-it-gives-you-at-a-glance" title="Link to this heading">¶</a></h2>
+<span id="r-what-it-gives-you-at-a-glance"></span><span id="r-what20it20gives20you2028at20a20glance29"></span><h2>What it gives you (at a glance)<a class="headerlink" href="#what-it-gives-you-at-a-glance" title="Link to this heading"></a></h2>
 <ul class="simple">
 <li><p>Reading raw files produced by Ngspice, Xyce, SPICE OPUS and LTspice</p></li>
 <li><p>Extension is written in C and allows to read large files without putting it into memory.</p></li>
@@ -56,7 +175,7 @@ It doesn’t read the whole file data into memory but read certain vectors lazil
 </ul>
 </section>
 <section id="building-requirements">
-<span id="r-building-requirements"></span><span id="r-building202620requirements"></span><h2>Building &amp; requirements<a class="headerlink" href="#building-requirements" title="Link to this heading">¶</a></h2>
+<span id="r-building-requirements"></span><span id="r-building202620requirements"></span><h2>Building &amp; requirements<a class="headerlink" href="#building-requirements" title="Link to this heading"></a></h2>
 <p>Requirements:</p>
 <ul class="simple">
 <li><p>Tcl headers/libs (9.0).</p></li>
@@ -72,11 +191,11 @@ It doesn’t read the whole file data into memory but read certain vectors lazil
 <p>For package uninstall run <code class="docutils literal notranslate"><span class="pre">sudo</span> <span class="pre">make</span> <span class="pre">uninstall</span></code>.</p>
 </section>
 <section id="documentation">
-<span id="r-documentation"></span><h2>Documentation<a class="headerlink" href="#documentation" title="Link to this heading">¶</a></h2>
+<span id="r-documentation"></span><h2>Documentation<a class="headerlink" href="#documentation" title="Link to this heading"></a></h2>
 <p>Documentation could be found <a class="reference external" href="https://georgtree.github.io/tclsimrawreader/">here</a>.</p>
 </section>
 <section id="quick-start">
-<span id="r-quick-start"></span><span id="r-quick20start"></span><h2>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading">¶</a></h2>
+<span id="r-quick-start"></span><span id="r-quick20start"></span><h2>Quick start<a class="headerlink" href="#quick-start" title="Link to this heading"></a></h2>
 <p>Package loading and initialization:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nb">package</span><span class="w"> </span>require<span class="w"> </span>tclsimrawreader
 
@@ -105,7 +224,7 @@ It doesn’t read the whole file data into memory but read certain vectors lazil
 </div>
 </section>
 <section id="installation-layout-and-removal">
-<span id="r-installation-layout-and-removal"></span><span id="r-installation20layout20and20removal"></span><h2>Installation layout and removal<a class="headerlink" href="#installation-layout-and-removal" title="Link to this heading">¶</a></h2>
+<span id="r-installation-layout-and-removal"></span><span id="r-installation20layout20and20removal"></span><h2>Installation layout and removal<a class="headerlink" href="#installation-layout-and-removal" title="Link to this heading"></a></h2>
 <p>Installation follows the rbc-tk9 layout and honors the directories selected by <code class="docutils literal notranslate"><span class="pre">configure</span></code>:</p>
 <ul class="simple">
 <li><p>The package library, Tcl scripts and <code class="docutils literal notranslate"><span class="pre">pkgIndex.tcl</span></code> go together in <code class="docutils literal notranslate"><span class="pre">$(libdir)/$(PACKAGE_NAME)$(PACKAGE_VERSION)</span></code>.</p></li>
@@ -129,7 +248,7 @@ and source tree to uninstall the corresponding installation, and use the same pa
 when overriding it explicitly, include the staging root yourself if needed.</p>
 </section>
 <section id="installation-archives">
-<span id="r-installation-archives"></span><span id="r-installation20archives"></span><h2>Installation archives<a class="headerlink" href="#installation-archives" title="Link to this heading">¶</a></h2>
+<span id="r-installation-archives"></span><span id="r-installation20archives"></span><h2>Installation archives<a class="headerlink" href="#installation-archives" title="Link to this heading"></a></h2>
 <p><code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">dist</span></code> follows rbc-tk9: it builds the package, stages <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">install</span></code> under the build directory, and creates
 <code class="docutils literal notranslate"><span class="pre">dist/$(PACKAGE_NAME)$(PACKAGE_VERSION).tar.gz</span></code>. <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">dist-zip</span></code> creates the same payload as a ZIP file as well.
 <code class="docutils literal notranslate"><span class="pre">make</span> <span class="pre">dist-clean</span></code> removes this package’s staging directory and both archives.</p>
@@ -152,7 +271,7 @@ or <code class="docutils literal notranslate"><span class="pre">dist-zip</span><
 </section>
 </section>
 <section id="interactive-help">
-<span id="r-interactive-help"></span><span id="r-interactive20help"></span><h1>Interactive help<a class="headerlink" href="#interactive-help" title="Link to this heading">¶</a></h1>
+<span id="r-interactive-help"></span><span id="r-interactive20help"></span><h1>Interactive help<a class="headerlink" href="#interactive-help" title="Link to this heading"></a></h1>
 <p>All public methods have interactive help. To get information about command and its arguments call it with <code class="docutils literal notranslate"><span class="pre">-help</span></code>
 switch:</p>
 <div class="highlight-tcl notranslate"><div class="highlight"><pre><span></span><span class="nb">package</span><span class="w"> </span>require<span class="w"> </span>tclsimrawreader
@@ -184,78 +303,34 @@ instead of switches names. Allows switches to appear after parameters.
 <strong>Copyright (c) George Yashin</strong></p></section>
 
 
-            <div class="clearer"></div>
+           </div>
           </div>
-        </div>
-      </div>
-      <div class="sphinxsidebar" role="navigation" aria-label="Main">
-        <div class="sphinxsidebarwrapper">
-  <div>
-    <h3><a href="index.html">Table of Contents</a></h3>
-    <ul>
-<li><a class="reference internal" href="#">tclsimrawreader - read SPICE .raw files with Tcl</a><ul>
-<li><a class="reference internal" href="#what-it-gives-you-at-a-glance">What it gives you (at a glance)</a></li>
-<li><a class="reference internal" href="#building-requirements">Building &amp; requirements</a></li>
-<li><a class="reference internal" href="#documentation">Documentation</a></li>
-<li><a class="reference internal" href="#quick-start">Quick start</a></li>
-<li><a class="reference internal" href="#installation-layout-and-removal">Installation layout and removal</a></li>
-<li><a class="reference internal" href="#installation-archives">Installation archives</a></li>
-</ul>
-</li>
-<li><a class="reference internal" href="#interactive-help">Interactive help</a></li>
-</ul>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="index.html" class="btn btn-neutral float-left" title="&lt;no title&gt;" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="tclsimrawreader-rbcBindings.html" class="btn btn-neutral float-right" title="RBC vectors support" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
 
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright George Yashin.</p>
   </div>
-  <div>
-    <h4>Previous topic</h4>
-    <p class="topless"><a href="index.html"
-                          title="previous chapter">&lt;no title&gt;</a></p>
-  </div>
-  <div>
-    <h4>Next topic</h4>
-    <p class="topless"><a href="tclsimrawreader-rbcBindings.html"
-                          title="next chapter">RBC vectors support</a></p>
-  </div>
-  <div role="note" aria-label="source link">
-    <h3>This Page</h3>
-    <ul class="this-page-menu">
-      <li><a href="_sources/tclsimrawreader.rst.txt"
-            rel="nofollow">Show Source</a></li>
-    </ul>
-   </div>
-<search id="searchbox" style="display: none" role="search">
-  <h3 id="searchlabel">Quick search</h3>
-    <div class="searchformwrapper">
-    <form class="search" action="search.html" method="get">
-      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
-      <input type="submit" value="Go" />
-    </form>
-    </div>
-</search>
-<script>document.getElementById('searchbox').style.display = "block"</script>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
         </div>
       </div>
-      <div class="clearer"></div>
-    </div>
-    <div class="related" role="navigation" aria-label="Related">
-      <h3>Navigation</h3>
-      <ul>
-        <li class="right" style="margin-right: 10px">
-          <a href="genindex.html" title="General Index"
-             >index</a></li>
-        <li class="right" >
-          <a href="tclsimrawreader-rbcBindings.html" title="RBC vectors support"
-             >next</a> |</li>
-        <li class="right" >
-          <a href="index.html" title="&lt;no title&gt;"
-             >previous</a> |</li>
-        <li class="nav-item nav-item-0"><a href="index.html">tclsimrawreader  documentation</a> &#187;</li>
-        <li class="nav-item nav-item-this"><a href="">tclsimrawreader - read SPICE .raw files with Tcl</a></li> 
-      </ul>
-    </div>
-    <div class="footer" role="contentinfo">
-    &#169; Copyright George Yashin.
-      Created using <a href="https://www.sphinx-doc.org/">Sphinx</a> 8.2.3.
-    </div>
-  </body>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
 </html>
