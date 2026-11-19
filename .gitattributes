@@ -1,0 +1,3 @@
+# Plot offsets and lengths are measured in bytes.
+test/raw_files/**/*.raw -text
+test/raw_files/**/*_ascii.raw text eol=crlf
